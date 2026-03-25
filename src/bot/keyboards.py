@@ -159,7 +159,8 @@ def subscriptions_keyboard(
     buttons = []
     row = []
     for ch in channels:
-        label = f"✅ {ch.username}" if ch.id in subscribed_ids else f"◻️ {ch.username}"
+        name = ch.title or ch.username
+        label = f"✅ {name}" if ch.id in subscribed_ids else f"◻️ {name}"
         row.append(InlineKeyboardButton(label, callback_data=f"toggle_sub:{ch.id}"))
         if len(row) == 2:
             buttons.append(row)
