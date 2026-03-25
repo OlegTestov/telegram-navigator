@@ -42,6 +42,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "start":
+        context.user_data.pop("search_global", None)
+        context.user_data.pop("search_channel_id", None)
         has_channels = len(queries.get_active_channels()) > 0
         welcome = msg.WELCOME_ADMIN if is_admin else msg.WELCOME_USER
         await query.edit_message_text(
@@ -51,6 +53,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "add_channel":
+        context.user_data.pop("search_global", None)
+        context.user_data.pop("search_channel_id", None)
         prompt = msg.ADD_CHANNEL_PROMPT if is_admin else msg.SUGGEST_CHANNEL_PROMPT
         back_kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 Назад", callback_data="start")]
@@ -59,6 +63,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "search_global":
+        context.user_data.pop("search_channel_id", None)
         context.user_data["search_global"] = True
         back_kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 Назад", callback_data="start")]
@@ -202,6 +207,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Search: search:{channel_id}
     if data.startswith("search:"):
         channel_id = int(data.split(":")[1])
+        context.user_data.pop("search_global", None)
         context.user_data["search_channel_id"] = channel_id
         await query.edit_message_text(msg.SEARCH_PROMPT_CHANNEL)
         return
