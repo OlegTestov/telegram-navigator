@@ -45,7 +45,7 @@ def channels_keyboard(channels: list[Channel]) -> InlineKeyboardMarkup:
     buttons = []
     row = []
     for ch in channels:
-        label = f"📢 {ch.username}"
+        label = f"📢 {ch.title or ch.username}"
         if ch.total_posts_indexed > 0:
             label += f" ({ch.total_posts_indexed})"
         row.append(InlineKeyboardButton(label, callback_data=f"ch:{ch.id}"))
