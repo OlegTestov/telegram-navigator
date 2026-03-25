@@ -100,6 +100,21 @@ CREATE INDEX idx_ct_post_embeddings_vector
     ON ct_post_embeddings USING ivfflat (embedding vector_cosine_ops)
     WITH (lists = 100);
 
+-- RPC function: posts without embeddings (LEFT JOIN not supported in PostgREST)
+CREATE OR REPLACE FUNCTION get_posts_without_embeddings(
+    p_channel_id int,
+    p_limit int DEFAULT 500
+) RETURNS SETOF ct_posts AS $$
+    SELECT p.*
+    FROM ct_posts p
+    LEFT JOIN ct_post_embeddings e ON e.post_id = p.id
+    WHERE p.channel_id = p_channel_id
+      AND p.classified_at IS NOT NULL
+      AND e.post_id IS NULL
+    ORDER BY p.id
+    LIMIT p_limit;
+$$ LANGUAGE sql STABLE;
+
 -- RPC function for vector similarity search
 CREATE OR REPLACE FUNCTION match_posts(
     query_embedding vector(1536),

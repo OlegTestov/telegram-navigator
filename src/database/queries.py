@@ -297,26 +297,13 @@ class DatabaseQueries:
     # --- Embeddings & Hybrid Search ---
 
     def get_posts_without_embeddings(self, channel_id: int, limit: int = 500) -> list[Post]:
-        # Get IDs that already have embeddings
-        emb_result = self.db.execute(
-            lambda: self.db.client.table("ct_post_embeddings")
-            .select("post_id")
-            .execute()
-        )
-        existing_ids = {row["post_id"] for row in emb_result.data}
-
-        # Get classified posts without embeddings
         result = self.db.execute(
-            lambda: self.db.client.table("ct_posts")
-            .select("*")
-            .eq("channel_id", channel_id)
-            .not_.is_("classified_at", "null")
-            .order("id")
-            .limit(limit + len(existing_ids))
-            .execute()
+            lambda: self.db.client.rpc("get_posts_without_embeddings", {
+                "p_channel_id": channel_id,
+                "p_limit": limit,
+            }).execute()
         )
-        posts = [Post.from_dict(row) for row in result.data if row["id"] not in existing_ids]
-        return posts[:limit]
+        return [Post.from_dict(row) for row in (result.data or [])]
 
     def upsert_embeddings(self, embeddings: list[tuple[int, list[float]]]):
         if not embeddings:
