@@ -102,7 +102,12 @@ async def process_channel(channel, queries, bot, client):
             texts = [f"{p.description or ''} {p.text[:500]}".strip() for p in unembedded]
             embeddings = await generate_embeddings(texts)
             if embeddings and len(embeddings) == len(unembedded):
-                pairs = [(post.id, serialize_float32(emb)) for post, emb in zip(unembedded, embeddings)]
+                if hasattr(queries, 'vector_search'):
+                    # Supabase: raw list[float] for pgvector
+                    pairs = [(post.id, emb) for post, emb in zip(unembedded, embeddings)]
+                else:
+                    # SQLite: binary format for sqlite-vec
+                    pairs = [(post.id, serialize_float32(emb)) for post, emb in zip(unembedded, embeddings)]
                 queries.upsert_embeddings(pairs)
                 logger.info("Stored %d embeddings for @%s", len(pairs), channel.username)
             else:

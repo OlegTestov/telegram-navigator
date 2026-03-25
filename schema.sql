@@ -87,3 +87,29 @@ CREATE TABLE ct_digest_deliveries (
     sent_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (user_id, digest_id)
 );
+
+-- Vector embeddings (requires pgvector extension)
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE ct_post_embeddings (
+    post_id BIGINT PRIMARY KEY REFERENCES ct_posts(id) ON DELETE CASCADE,
+    embedding vector(1536)
+);
+
+CREATE INDEX idx_ct_post_embeddings_vector
+    ON ct_post_embeddings USING ivfflat (embedding vector_cosine_ops)
+    WITH (lists = 100);
+
+-- RPC function for vector similarity search
+CREATE OR REPLACE FUNCTION match_posts(
+    query_embedding vector(1536),
+    match_channel_id int,
+    match_count int DEFAULT 20
+) RETURNS TABLE(post_id bigint, similarity float) AS $$
+    SELECT e.post_id, 1 - (e.embedding <=> query_embedding) AS similarity
+    FROM ct_post_embeddings e
+    JOIN ct_posts p ON p.id = e.post_id
+    WHERE p.channel_id = match_channel_id
+    ORDER BY e.embedding <=> query_embedding
+    LIMIT match_count;
+$$ LANGUAGE sql STABLE;

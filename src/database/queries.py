@@ -294,6 +294,117 @@ class DatabaseQueries:
         )
         return [Post.from_dict(row) for row in result.data]
 
+    # --- Embeddings & Hybrid Search ---
+
+    def get_posts_without_embeddings(self, channel_id: int, limit: int = 500) -> list[Post]:
+        # Get IDs that already have embeddings
+        emb_result = self.db.execute(
+            lambda: self.db.client.table("ct_post_embeddings")
+            .select("post_id")
+            .execute()
+        )
+        existing_ids = {row["post_id"] for row in emb_result.data}
+
+        # Get classified posts without embeddings
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_posts")
+            .select("*")
+            .eq("channel_id", channel_id)
+            .not_.is_("classified_at", "null")
+            .order("id")
+            .limit(limit + len(existing_ids))
+            .execute()
+        )
+        posts = [Post.from_dict(row) for row in result.data if row["id"] not in existing_ids]
+        return posts[:limit]
+
+    def upsert_embeddings(self, embeddings: list[tuple[int, list[float]]]):
+        if not embeddings:
+            return
+        rows = [{"post_id": pid, "embedding": str(emb)} for pid, emb in embeddings]
+        for i in range(0, len(rows), 500):
+            batch = rows[i:i + 500]
+            self.db.execute(
+                lambda b=batch: self.db.client.table("ct_post_embeddings")
+                .upsert(b, on_conflict="post_id")
+                .execute()
+            )
+
+    def vector_search(
+        self, channel_id: int, query_embedding: list[float], limit: int = 20
+    ) -> list[dict]:
+        """Vector similarity search via Supabase RPC (pgvector)."""
+        result = self.db.execute(
+            lambda: self.db.client.rpc("match_posts", {
+                "query_embedding": str(query_embedding),
+                "match_channel_id": channel_id,
+                "match_count": limit,
+            }).execute()
+        )
+        return result.data or []
+
+    def hybrid_search(
+        self,
+        channel_id: int,
+        query: str,
+        query_embedding: list[float] | None = None,
+        limit: int = 20,
+    ) -> list[Post]:
+        """Hybrid vector + keyword search."""
+        scores: dict[int, dict] = {}
+
+        # Vector search
+        if query_embedding:
+            vec_results = self.vector_search(channel_id, query_embedding, limit=50)
+            for row in vec_results:
+                scores[row["post_id"]] = {
+                    "vector": max(0, row["similarity"]),
+                    "keyword": 0.0,
+                }
+
+        # Keyword search
+        pattern = f"%{query}%"
+        kw_result = self.db.execute(
+            lambda: self.db.client.table("ct_posts")
+            .select("id,score")
+            .eq("channel_id", channel_id)
+            .or_(f"text.ilike.{pattern},description.ilike.{pattern}")
+            .order("score", desc=True)
+            .limit(50)
+            .execute()
+        )
+        for row in kw_result.data:
+            pid = row["id"]
+            if pid not in scores:
+                scores[pid] = {"vector": 0.0, "keyword": 0.0}
+            scores[pid]["keyword"] = 1.0
+
+        if not scores:
+            return []
+
+        # Fetch full posts
+        post_ids = list(scores.keys())
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_posts")
+            .select("*")
+            .eq("channel_id", channel_id)
+            .in_("id", post_ids)
+            .execute()
+        )
+        posts_by_id = {row["id"]: Post.from_dict(row) for row in result.data}
+
+        # Rank: vector * 0.6 + keyword * 0.2 + post.score * 0.2
+        ranked = []
+        for pid, s in scores.items():
+            if pid not in posts_by_id:
+                continue
+            post = posts_by_id[pid]
+            final = s["vector"] * 0.6 + s["keyword"] * 0.2 + post.score * 0.2
+            ranked.append((final, post))
+
+        ranked.sort(key=lambda x: x[0], reverse=True)
+        return [post for _, post in ranked[:limit]]
+
     def get_channel_post_count(self, channel_id: int) -> int:
         result = self.db.execute(
             lambda: self.db.client.table("ct_posts")

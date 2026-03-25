@@ -10,7 +10,7 @@ from src.bot.keyboards import channels_keyboard, start_keyboard, search_results_
 from src.utils.helpers import parse_channel_url, parse_post_url
 
 if EMBEDDINGS_ENABLED:
-    from src.services.embedder import get_query_embedding, serialize_float32
+    from src.services.embedder import get_query_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +59,10 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def _get_query_embedding_bytes(query: str) -> bytes | None:
+async def _get_query_embedding(query: str) -> list[float] | None:
     if not EMBEDDINGS_ENABLED:
         return None
-    emb = await get_query_embedding(query)
-    return serialize_float32(emb) if emb else None
+    return await get_query_embedding(query)
 
 
 def _format_search_results(posts: list, channel_username: str = None) -> list[str]:
@@ -90,7 +89,7 @@ async def _do_global_search(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     """Global search across all channels."""
     queries = _get_queries(context)
     channels = queries.get_active_channels()
-    query_emb = await _get_query_embedding_bytes(query)
+    query_emb = await _get_query_embedding(query)
 
     results_lines = []
     for ch in channels:
@@ -123,7 +122,7 @@ async def _do_channel_search(
 ):
     """Search within a specific channel."""
     queries = _get_queries(context)
-    query_emb = await _get_query_embedding_bytes(query)
+    query_emb = await _get_query_embedding(query)
 
     if hasattr(queries, "hybrid_search"):
         posts = queries.hybrid_search(channel_id, query, query_emb, limit=10)

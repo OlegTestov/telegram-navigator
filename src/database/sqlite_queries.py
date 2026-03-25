@@ -386,15 +386,17 @@ class SQLiteQueries:
         self,
         channel_id: int,
         query: str,
-        query_embedding: bytes | None = None,
+        query_embedding: list[float] | None = None,
         limit: int = 20,
     ) -> list[Post]:
         """Hybrid vector + keyword search."""
+        import struct
         scores: dict[int, dict] = {}
 
         # Vector search
         if query_embedding and self._vec_enabled:
-            vec_results = self.vector_search(query_embedding, limit=50)
+            emb_bytes = struct.pack(f"{len(query_embedding)}f", *query_embedding)
+            vec_results = self.vector_search(emb_bytes, limit=50)
             for post_id, distance in vec_results:
                 # OpenAI embeddings are L2-normalized, so:
                 # cosine_similarity = 1 - (L2_distance² / 2)
