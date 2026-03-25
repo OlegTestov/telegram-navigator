@@ -6,29 +6,84 @@ from src.database.models import Channel, Topic, Post
 from src.config.constants import TOPICS_PER_PAGE, POSTS_PER_PAGE
 
 
+def search_results_keyboard(channel_id: int = None) -> InlineKeyboardMarkup:
+    """Buttons after search results."""
+    search_cb = f"search:{channel_id}" if channel_id else "search_global"
+    back_cb = f"ch:{channel_id}" if channel_id else "start"
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🔍 Новый поиск", callback_data=search_cb),
+            InlineKeyboardButton("🔙 Назад", callback_data=back_cb),
+        ],
+    ])
+
+
+def start_keyboard(has_channels: bool, is_admin: bool = False) -> InlineKeyboardMarkup:
+    """Start screen keyboard — 2x2 grid."""
+    add_label = "➕ Добавить канал" if is_admin else "📨 Предложить канал"
+    if has_channels:
+        buttons = [
+            [
+                InlineKeyboardButton("🔍 Поиск", callback_data="search_global"),
+                InlineKeyboardButton("📬 Подписки", callback_data="my_subs"),
+            ],
+            [
+                InlineKeyboardButton("📢 Каналы", callback_data="channels"),
+                InlineKeyboardButton(add_label, callback_data="add_channel"),
+            ],
+        ]
+    else:
+        buttons = [
+            [InlineKeyboardButton(add_label, callback_data="add_channel")],
+            [InlineKeyboardButton("📬 Подписки", callback_data="my_subs")],
+        ]
+    return InlineKeyboardMarkup(buttons)
+
+
 def channels_keyboard(channels: list[Channel]) -> InlineKeyboardMarkup:
-    """Build keyboard with list of channels."""
+    """Build keyboard with list of channels, 2 per row."""
     buttons = []
+    row = []
     for ch in channels:
         label = f"📢 {ch.username}"
         if ch.total_posts_indexed > 0:
             label += f" ({ch.total_posts_indexed})"
-        buttons.append([InlineKeyboardButton(label, callback_data=f"ch:{ch.id}")])
+        row.append(InlineKeyboardButton(label, callback_data=f"ch:{ch.id}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("🔙 Назад", callback_data="start")])
     return InlineKeyboardMarkup(buttons)
 
 
-def channel_actions_keyboard(channel_id: int) -> InlineKeyboardMarkup:
-    """Actions for a selected channel."""
-    return InlineKeyboardMarkup([
+def channel_actions_keyboard(
+    channel_id: int, is_admin: bool = False, has_toc: bool = False,
+    is_subscribed: bool = False,
+) -> InlineKeyboardMarkup:
+    """Actions for a selected channel — 2 columns, 3 rows."""
+    toc_label = "🔄 Обновить оглавление" if has_toc else "📚 Создать оглавление"
+    sub_label = "📭 Отписаться" if is_subscribed else "📬 Подписаться"
+    sub_cb = f"unsub:{channel_id}" if is_subscribed else f"sub:{channel_id}"
+    buttons = [
         [
-            InlineKeyboardButton("📋 Все темы", callback_data=f"topics:{channel_id}:0"),
             InlineKeyboardButton("🔍 Поиск", callback_data=f"search:{channel_id}"),
+            InlineKeyboardButton("📋 Все темы", callback_data=f"topics:{channel_id}:0"),
         ],
         [
+            InlineKeyboardButton(sub_label, callback_data=sub_cb),
+            InlineKeyboardButton(toc_label, callback_data=f"toc:{channel_id}"),
+        ],
+    ]
+    if is_admin:
+        buttons.append([
             InlineKeyboardButton("⚙️ Настройки", callback_data=f"settings:{channel_id}"),
             InlineKeyboardButton("🔙 Назад", callback_data="channels"),
-        ],
-    ])
+        ])
+    else:
+        buttons.append([InlineKeyboardButton("🔙 Назад", callback_data="channels")])
+    return InlineKeyboardMarkup(buttons)
 
 
 def topics_keyboard(
@@ -54,7 +109,6 @@ def topics_keyboard(
     if row:
         buttons.append(row)
 
-    # Navigation
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("⬅️", callback_data=f"topics:{channel_id}:{page - 1}"))
@@ -98,8 +152,26 @@ def posts_keyboard(
     return InlineKeyboardMarkup(buttons)
 
 
+def subscriptions_keyboard(
+    channels: list[Channel], subscribed_ids: set[int],
+) -> InlineKeyboardMarkup:
+    """All channels with toggle subscribe/unsubscribe."""
+    buttons = []
+    row = []
+    for ch in channels:
+        label = f"✅ {ch.username}" if ch.id in subscribed_ids else f"◻️ {ch.username}"
+        row.append(InlineKeyboardButton(label, callback_data=f"toggle_sub:{ch.id}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("🔙 Назад", callback_data="start")])
+    return InlineKeyboardMarkup(buttons)
+
+
 def channel_settings_keyboard(channel: Channel) -> InlineKeyboardMarkup:
-    """Settings for a channel."""
+    """Settings for a channel (admin only)."""
     buttons = []
     if channel.pinned_message_id:
         buttons.append([

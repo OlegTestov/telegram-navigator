@@ -2,8 +2,11 @@
 
 import logging
 from datetime import timezone
+from typing import Optional
+
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+from telethon.tl.types import PeerChannel
 
 from src.config.settings import TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION_STRING
 from src.utils.errors import FetchError
@@ -24,20 +27,26 @@ async def fetch_channel_posts(
     client: TelegramClient,
     channel_username: str,
     last_message_id: int = 0,
-) -> tuple[str, list[dict]]:
+    peer_id: Optional[int] = None,
+) -> tuple[str, list[dict], int]:
     """Fetch posts from a channel newer than last_message_id.
 
-    Returns (channel_title, list of post dicts).
+    Returns (channel_title, list of post dicts, peer_id).
     """
     try:
-        entity = await client.get_entity(channel_username)
+        # Use numeric peer_id if available (avoids username resolution API call)
+        if peer_id:
+            entity = await client.get_entity(PeerChannel(peer_id))
+        else:
+            entity = await client.get_entity(channel_username)
+
+        resolved_peer_id = entity.id
         title = getattr(entity, "title", channel_username)
         posts = []
 
-        async for message in client.iter_messages(entity, limit=None):
-            if message.id <= last_message_id:
-                break
-
+        async for message in client.iter_messages(
+            entity, min_id=last_message_id, limit=500
+        ):
             text = message.text or ""
             if not text.strip():
                 continue
@@ -68,7 +77,7 @@ async def fetch_channel_posts(
             "Fetched %d new posts from @%s (after msg_id=%d)",
             len(posts), channel_username, last_message_id,
         )
-        return title, posts
+        return title, posts, resolved_peer_id
 
     except Exception as e:
         logger.error("Error fetching @%s: %s", channel_username, e)

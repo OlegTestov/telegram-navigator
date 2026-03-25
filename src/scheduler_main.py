@@ -5,35 +5,46 @@ import logging
 import sys
 
 from telegram import Bot
+from telethon.errors import FloodWaitError
 
-from src.config.settings import TELEGRAM_BOT_TOKEN, validate_config
+from src.config.settings import TELEGRAM_BOT_TOKEN, BATCH_SIZE, EMBEDDINGS_ENABLED, validate_config
+from src.config.constants import FETCH_DELAY_SECONDS
 from src.database.factory import create_queries
 from src.services.fetcher import create_telethon_client, fetch_channel_posts
 from src.services.classifier import classify_posts, generate_topic_summary
 from src.services.toc_generator import generate_compact_toc, should_update_pinned
+from src.services.digest import should_run_digest, run_digest_cycle
 from src.utils.helpers import content_hash
+
+if EMBEDDINGS_ENABLED:
+    from src.services.embedder import generate_embeddings, serialize_float32
 
 logger = logging.getLogger(__name__)
 
 
-async def process_channel(channel, queries: DatabaseQueries, bot: Bot):
+async def process_channel(channel, queries, bot, client):
     """Process a single channel: fetch → classify → score → update TOC."""
     logger.info("Processing @%s (last_msg_id=%d)", channel.username, channel.last_fetched_message_id)
 
-    # 1. Fetch new posts
-    client = create_telethon_client()
-    async with client:
-        title, raw_posts = await fetch_channel_posts(
-            client, channel.username, channel.last_fetched_message_id
-        )
+    # 1. Fetch new posts (use peer_id to avoid username resolution)
+    title, raw_posts, peer_id = await fetch_channel_posts(
+        client, channel.username, channel.last_fetched_message_id,
+        peer_id=channel.peer_id,
+    )
+
+    # Save peer_id on first resolve
+    if peer_id and peer_id != channel.peer_id:
+        queries.update_channel_peer_id(channel.id, peer_id)
 
     if title and title != channel.title:
         queries.update_channel_title(channel.id, title)
 
     # 2. Upsert posts
+    has_changes = False
     if raw_posts:
         new_count = queries.upsert_posts(channel.id, raw_posts)
         logger.info("Upserted %d posts for @%s", new_count, channel.username)
+        has_changes = new_count > 0
 
         # Update sync state with highest message_id
         max_msg_id = max(p["message_id"] for p in raw_posts)
@@ -41,20 +52,31 @@ async def process_channel(channel, queries: DatabaseQueries, bot: Bot):
             total = queries.get_channel_post_count(channel.id)
             queries.update_channel_sync(channel.id, max_msg_id, total)
 
-    # 3. Classify unclassified posts
-    unclassified = queries.get_unclassified_posts(channel.id)
-    if unclassified:
-        logger.info("Classifying %d posts for @%s", len(unclassified), channel.username)
+    # 3. Classify unclassified posts — loop until all done
+    while True:
+        unclassified = queries.get_unclassified_posts(channel.id, limit=BATCH_SIZE)
+        if not unclassified:
+            break
+
+        total_remaining = queries.get_unclassified_count(channel.id)
+        logger.info(
+            "Classifying batch of %d posts for @%s (%d remaining)",
+            len(unclassified), channel.username, total_remaining,
+        )
 
         existing_topics = [t.name for t in queries.get_topics(channel.id)]
-        post_dicts = [{"text": p.text} for p in unclassified]
+        post_dicts = [{"text": p.text, "post_id": p.id} for p in unclassified]
         classifications = await classify_posts(post_dicts, existing_topics)
+
+        # Build index map for reliable matching
+        post_by_idx = {i: p for i, p in enumerate(unclassified)}
+        classified_count = 0
 
         for cls_result in classifications:
             idx = cls_result["post_index"]
-            if idx >= len(unclassified):
+            if idx not in post_by_idx:
                 continue
-            post = unclassified[idx]
+            post = post_by_idx[idx]
 
             # Save classification
             queries.set_post_classification(
@@ -66,13 +88,39 @@ async def process_channel(channel, queries: DatabaseQueries, bot: Bot):
                 topic = queries.get_or_create_topic(channel.id, topic_name.strip())
                 queries.link_post_topic(post.id, topic.id)
 
-    # 4. Recalculate scores
+            del post_by_idx[idx]
+            classified_count += 1
+
+        logger.info("Classified %d/%d in this batch", classified_count, len(unclassified))
+        has_changes = True
+
+    # 4. Generate embeddings for posts without them (runs even without new posts)
+    if EMBEDDINGS_ENABLED and hasattr(queries, 'get_posts_without_embeddings'):
+        unembedded = queries.get_posts_without_embeddings(channel.id, limit=500)
+        while unembedded:
+            logger.info("Generating embeddings for %d posts in @%s", len(unembedded), channel.username)
+            texts = [f"{p.description or ''} {p.text[:500]}".strip() for p in unembedded]
+            embeddings = await generate_embeddings(texts)
+            if embeddings and len(embeddings) == len(unembedded):
+                pairs = [(post.id, serialize_float32(emb)) for post, emb in zip(unembedded, embeddings)]
+                queries.upsert_embeddings(pairs)
+                logger.info("Stored %d embeddings for @%s", len(pairs), channel.username)
+            else:
+                logger.warning("Embedding generation failed or count mismatch, skipping")
+                break
+            unembedded = queries.get_posts_without_embeddings(channel.id, limit=500)
+
+    if not has_changes:
+        logger.info("No changes for @%s, skipping heavy operations", channel.username)
+        return
+
+    # 5. Recalculate scores
     queries.recalculate_scores(channel.id)
 
-    # 5. Update topic counts
+    # 6. Update topic counts
     queries.update_topic_counts(channel.id)
 
-    # 6. Generate topic summaries for topics without one
+    # 7. Generate topic summaries for topics without one
     topics = queries.get_topics(channel.id)
     for topic in topics:
         if not topic.summary and topic.post_count > 0:
@@ -83,16 +131,17 @@ async def process_channel(channel, queries: DatabaseQueries, bot: Bot):
                 if summary:
                     queries.update_topic_summary(topic.id, summary)
 
-    # 7. Update pinned post if configured
+    # 8. Generate TOC, cache it, and update pinned post if configured
     channel = queries.get_channel_by_id(channel.id)  # Refresh
-    toc = generate_compact_toc(channel, queries)
+    toc = await generate_compact_toc(channel, queries)
+    queries.save_cached_toc(channel.id, toc)
     if should_update_pinned(channel, toc):
         try:
             await bot.edit_message_text(
                 chat_id=channel.pinned_chat_id,
                 message_id=channel.pinned_message_id,
                 text=toc,
-                parse_mode=None,  # plain text, links are plain URLs
+                parse_mode="HTML",
             )
             queries.update_pinned_hash(channel.id, content_hash(toc))
             logger.info("Updated pinned post for @%s", channel.username)
@@ -116,11 +165,40 @@ async def run_scheduler():
 
     logger.info("Processing %d active channel(s)...", len(channels))
 
-    for channel in channels:
-        try:
-            await process_channel(channel, queries, bot)
-        except Exception as e:
-            logger.error("Error processing @%s: %s", channel.username, e, exc_info=True)
+    # One Telethon client for the entire run
+    client = create_telethon_client()
+    async with client:
+        for i, channel in enumerate(channels):
+            try:
+                await process_channel(channel, queries, bot, client)
+            except FloodWaitError as e:
+                logger.warning(
+                    "FloodWait for %d seconds while processing @%s, sleeping...",
+                    e.seconds, channel.username,
+                )
+                await asyncio.sleep(e.seconds + 5)
+                # Retry once after waiting
+                try:
+                    await process_channel(channel, queries, bot, client)
+                except Exception as retry_err:
+                    logger.error("Retry failed for @%s: %s", channel.username, retry_err, exc_info=True)
+            except Exception as e:
+                logger.error("Error processing @%s: %s", channel.username, e, exc_info=True)
+
+            # Pause between channels
+            if i < len(channels) - 1:
+                await asyncio.sleep(FETCH_DELAY_SECONDS)
+
+    # Digest cycle: generate per-channel digests and deliver to subscribers
+    try:
+        if should_run_digest(queries):
+            logger.info("Running digest cycle...")
+            await run_digest_cycle(queries, bot)
+            logger.info("Digest cycle complete.")
+        else:
+            logger.info("Skipping digest (not time yet)")
+    except Exception as e:
+        logger.error("Digest cycle failed: %s", e, exc_info=True)
 
     logger.info("Scheduler run complete.")
 

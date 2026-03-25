@@ -25,7 +25,7 @@ def slugify(text: str) -> str:
     text = re.sub(r"[^\w\s-]", "", text)
     text = re.sub(r"[\s_]+", "-", text)
     text = re.sub(r"-+", "-", text).strip("-")
-    return text[:50]
+    return text[:40]
 
 
 def content_hash(text: str) -> str:

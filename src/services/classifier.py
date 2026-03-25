@@ -56,7 +56,8 @@ async def _classify_batch(
     posts_text = []
     for idx, post in enumerate(posts):
         text = post["text"][:MAX_POST_TEXT_FOR_LLM]
-        posts_text.append(f"[Post {idx}]\n{text}")
+        post_id = post.get("post_id", idx)
+        posts_text.append(f"[Post {idx}, id={post_id}]\n{text}")
 
     topics_str = ", ".join(existing_topics) if existing_topics else "(пока нет тем)"
 
@@ -80,7 +81,7 @@ async def _classify_batch(
             {
                 "post_index": idx,
                 "topics": ["Прочее"],
-                "description": post["text"][:80],
+                "description": post["text"][:50],
                 "usefulness": 5,
             }
             for idx, post in enumerate(posts)
@@ -106,7 +107,7 @@ def _parse_classification_response(text: str, expected_count: int) -> list[dict]
         results.append({
             "post_index": item.get("post_index", len(results)),
             "topics": item.get("topics", ["Прочее"]),
-            "description": item.get("description", "")[:80],
+            "description": item.get("description", "")[:50],
             "usefulness": min(10, max(1, item.get("usefulness", 5))),
         })
 

@@ -4,10 +4,13 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from src.config.settings import ADMIN_TELEGRAM_ID
+from src.config.settings import ADMIN_TELEGRAM_ID, EMBEDDINGS_ENABLED
 from src.bot import messages as msg
-from src.bot.keyboards import channels_keyboard
+from src.bot.keyboards import channels_keyboard, start_keyboard, search_results_keyboard
 from src.utils.helpers import parse_channel_url, parse_post_url
+
+if EMBEDDINGS_ENABLED:
+    from src.services.embedder import get_query_embedding, serialize_float32
 
 logger = logging.getLogger(__name__)
 
@@ -21,39 +24,34 @@ def _get_queries(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not _is_admin(update.effective_user.id):
-        await update.message.reply_text(msg.NOT_ADMIN)
-        return
-    await update.message.reply_text(msg.WELCOME)
+    is_admin = _is_admin(update.effective_user.id)
+    queries = _get_queries(context)
+    has_channels = len(queries.get_active_channels()) > 0
+    welcome = msg.WELCOME_ADMIN if is_admin else msg.WELCOME_USER
+    await update.message.reply_text(
+        welcome, parse_mode="HTML",
+        reply_markup=start_keyboard(has_channels, is_admin),
+    )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not _is_admin(update.effective_user.id):
-        await update.message.reply_text(msg.NOT_ADMIN)
-        return
-    await update.message.reply_text(msg.HELP, parse_mode="HTML")
+    help_text = msg.HELP_ADMIN if _is_admin(update.effective_user.id) else msg.HELP_USER
+    await update.message.reply_text(help_text, parse_mode="HTML")
 
 
 async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not _is_admin(update.effective_user.id):
-        await update.message.reply_text(msg.NOT_ADMIN)
-        return
-
     queries = _get_queries(context)
     channels = queries.get_active_channels()
     if not channels:
         await update.message.reply_text(msg.NO_CHANNELS)
         return
     await update.message.reply_text(
-        "📢 Ваши каналы:", reply_markup=channels_keyboard(channels)
+        msg.CHANNELS_HEADER, parse_mode="HTML",
+        reply_markup=channels_keyboard(channels),
     )
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not _is_admin(update.effective_user.id):
-        await update.message.reply_text(msg.NOT_ADMIN)
-        return
-
     queries = _get_queries(context)
     stats = queries.get_stats()
     await update.message.reply_text(
@@ -61,57 +59,122 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not _is_admin(update.effective_user.id):
-        await update.message.reply_text(msg.NOT_ADMIN)
-        return
+async def _get_query_embedding_bytes(query: str) -> bytes | None:
+    if not EMBEDDINGS_ENABLED:
+        return None
+    emb = await get_query_embedding(query)
+    return serialize_float32(emb) if emb else None
 
+
+def _format_search_results(posts: list, channel_username: str = None) -> list[str]:
+    """Format search results with inline links."""
+    lines = []
+    if channel_username:
+        lines.append(f"\n📢 @{channel_username}:")
+    for p in posts:
+        desc = p.description or p.text[:60]
+        lines.append(f'• <a href="{p.post_url}">{desc}</a>')
+    return lines
+
+
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text(msg.SEARCH_PROMPT)
+        await update.message.reply_text(msg.SEARCH_PROMPT_GLOBAL)
         return
 
     query = " ".join(context.args)
+    await _do_global_search(update, context, query)
+
+
+async def _do_global_search(update: Update, context: ContextTypes.DEFAULT_TYPE, query: str):
+    """Global search across all channels."""
     queries = _get_queries(context)
     channels = queries.get_active_channels()
+    query_emb = await _get_query_embedding_bytes(query)
 
-    results_text = []
+    results_lines = []
     for ch in channels:
-        posts = queries.search_posts(ch.id, query, limit=10)
+        if hasattr(queries, "hybrid_search"):
+            posts = queries.hybrid_search(ch.id, query, query_emb, limit=10)
+        else:
+            posts = queries.search_posts(ch.id, query, limit=10)
         if posts:
-            results_text.append(f"\n📢 @{ch.username}:")
-            for p in posts:
-                desc = p.description or p.text[:60]
-                results_text.append(f"• {desc}\n  {p.post_url}")
+            results_lines.extend(_format_search_results(posts, ch.username))
 
-    if not results_text:
-        await update.message.reply_text(msg.SEARCH_NO_RESULTS.format(query=query))
+    if not results_lines:
+        await update.message.reply_text(
+            msg.SEARCH_NO_RESULTS.format(query=query),
+            reply_markup=search_results_keyboard(),
+        )
         return
 
-    text = f"🔍 Результаты по «{query}»:" + "\n".join(results_text)
-    # Truncate if too long
+    text = f"🔍 Результаты по «{query}»:" + "\n".join(results_lines)
     if len(text) > 4000:
         text = text[:4000] + "\n..."
-    await update.message.reply_text(text)
+    await update.message.reply_text(
+        text, parse_mode="HTML", disable_web_page_preview=True,
+        reply_markup=search_results_keyboard(),
+    )
+
+
+async def _do_channel_search(
+    update: Update, context: ContextTypes.DEFAULT_TYPE,
+    channel_id: int, query: str,
+):
+    """Search within a specific channel."""
+    queries = _get_queries(context)
+    query_emb = await _get_query_embedding_bytes(query)
+
+    if hasattr(queries, "hybrid_search"):
+        posts = queries.hybrid_search(channel_id, query, query_emb, limit=10)
+    else:
+        posts = queries.search_posts(channel_id, query, limit=10)
+
+    if not posts:
+        await update.message.reply_text(
+            msg.SEARCH_NO_RESULTS.format(query=query),
+            reply_markup=search_results_keyboard(channel_id),
+        )
+        return
+
+    channel = queries.get_channel_by_id(channel_id)
+    lines = _format_search_results(posts, channel.username)
+    text = f"🔍 Результаты по «{query}»:" + "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:4000] + "\n..."
+    await update.message.reply_text(
+        text, parse_mode="HTML", disable_web_page_preview=True,
+        reply_markup=search_results_keyboard(channel_id),
+    )
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle plain text messages — channel URLs or post URLs."""
-    if not _is_admin(update.effective_user.id):
-        await update.message.reply_text(msg.NOT_ADMIN)
-        return
-
+    """Handle plain text messages — channel URLs, post URLs, search."""
     text = update.message.text.strip()
     queries = _get_queries(context)
 
-    # Check if it's a post URL (for pinned post setup)
+    # Global search (from start menu button)
+    if context.user_data.pop("search_global", None):
+        await _do_global_search(update, context, text)
+        return
+
+    # Per-channel search (from inline button)
+    search_channel_id = context.user_data.pop("search_channel_id", None)
+    if search_channel_id:
+        await _do_channel_search(update, context, search_channel_id, text)
+        return
+
+    # Check if it's a post URL (for pinned post setup — admin only)
     post_info = parse_post_url(text)
     if post_info:
+        if not _is_admin(update.effective_user.id):
+            await update.message.reply_text(msg.NOT_ADMIN)
+            return
         username, message_id = post_info
         channel = queries.get_channel_by_username(username)
         if not channel:
             await update.message.reply_text(msg.PINNED_WRONG_CHANNEL)
             return
-        # Resolve chat_id from username via bot
         try:
             chat = await context.bot.get_chat(f"@{username}")
             queries.set_channel_pinned(channel.id, chat.id, message_id)
@@ -120,9 +183,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
         except Exception as e:
             logger.error("Failed to get chat for @%s: %s", username, e)
-            await update.message.reply_text(
-                "❌ Не удалось получить доступ к каналу. Убедитесь, что бот добавлен админом."
-            )
+            await update.message.reply_text(msg.PINNED_ACCESS_ERROR)
         return
 
     # Check if it's a channel URL
@@ -132,8 +193,31 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         if existing:
             await update.message.reply_text(msg.CHANNEL_EXISTS.format(username=username))
             return
-        channel = queries.add_channel(username, update.effective_user.id)
-        await update.message.reply_text(msg.CHANNEL_ADDED.format(username=username))
+
+        is_admin = _is_admin(update.effective_user.id)
+        if is_admin:
+            queries.add_channel(username, update.effective_user.id)
+            await update.message.reply_text(
+                msg.CHANNEL_ADDED.format(username=username),
+                reply_markup=start_keyboard(True, True),
+            )
+        else:
+            user = update.effective_user
+            user_name = user.full_name or user.username or str(user.id)
+            await update.message.reply_text(
+                msg.CHANNEL_SUGGESTED.format(username=username),
+                reply_markup=start_keyboard(True, False),
+            )
+            try:
+                await context.bot.send_message(
+                    chat_id=ADMIN_TELEGRAM_ID,
+                    text=msg.CHANNEL_SUGGESTION_NOTIFY.format(
+                        user_name=user_name, user_id=user.id, username=username,
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
         return
 
     # Not recognized

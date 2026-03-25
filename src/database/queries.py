@@ -46,20 +46,28 @@ class DatabaseQueries:
             lambda: self.db.client.table("ct_channels")
             .select("*")
             .eq("username", username)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        return Channel.from_dict(result.data) if result.data else None
+        return Channel.from_dict(result.data[0]) if result.data else None
 
     def get_channel_by_id(self, channel_id: int) -> Optional[Channel]:
         result = self.db.execute(
             lambda: self.db.client.table("ct_channels")
             .select("*")
             .eq("id", channel_id)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        return Channel.from_dict(result.data) if result.data else None
+        return Channel.from_dict(result.data[0]) if result.data else None
+
+    def update_channel_peer_id(self, channel_id: int, peer_id: int):
+        self.db.execute(
+            lambda: self.db.client.table("ct_channels")
+            .update({"peer_id": peer_id})
+            .eq("id", channel_id)
+            .execute()
+        )
 
     def update_channel_title(self, channel_id: int, title: str):
         self.db.execute(
@@ -101,6 +109,15 @@ class DatabaseQueries:
         self.db.execute(
             lambda: self.db.client.table("ct_channels")
             .update({"pinned_content_hash": hash_val})
+            .eq("id", channel_id)
+            .execute()
+        )
+
+    def save_cached_toc(self, channel_id: int, toc: str):
+        from datetime import datetime, timezone
+        self.db.execute(
+            lambda: self.db.client.table("ct_channels")
+            .update({"cached_toc": toc, "toc_updated_at": datetime.now(timezone.utc).isoformat()})
             .eq("id", channel_id)
             .execute()
         )
@@ -147,6 +164,29 @@ class DatabaseQueries:
             .execute()
         )
         return len(result.data)
+
+    def get_posts_since(self, channel_id: int, since_iso: str) -> list[Post]:
+        """Get all classified posts since a date (ISO format)."""
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_posts")
+            .select("*")
+            .eq("channel_id", channel_id)
+            .gte("post_date", since_iso)
+            .not_.is_("classified_at", "null")
+            .order("score", desc=True)
+            .execute()
+        )
+        return [Post.from_dict(row) for row in result.data]
+
+    def get_unclassified_count(self, channel_id: int) -> int:
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_posts")
+            .select("id", count="exact")
+            .eq("channel_id", channel_id)
+            .is_("classified_at", "null")
+            .execute()
+        )
+        return result.count or 0
 
     def get_unclassified_posts(self, channel_id: int, limit: int = 200) -> list[Post]:
         result = self.db.execute(
@@ -201,10 +241,10 @@ class DatabaseQueries:
             .select("*")
             .eq("channel_id", channel_id)
             .eq("message_id", message_id)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        return Post.from_dict(result.data) if result.data else None
+        return Post.from_dict(result.data[0]) if result.data else None
 
     def get_posts_by_topic(
         self, topic_id: int, page: int = 0, limit: int = POSTS_PER_PAGE
@@ -313,11 +353,11 @@ class DatabaseQueries:
             .select("*")
             .eq("channel_id", channel_id)
             .eq("slug", slug)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
         if result.data:
-            return Topic.from_dict(result.data)
+            return Topic.from_dict(result.data[0])
 
         result = self.db.execute(
             lambda: self.db.client.table("ct_topics")
@@ -342,10 +382,36 @@ class DatabaseQueries:
             .select("*")
             .eq("channel_id", channel_id)
             .eq("slug", slug)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        return Topic.from_dict(result.data) if result.data else None
+        return Topic.from_dict(result.data[0]) if result.data else None
+
+    def get_tags_for_posts(self, channel_id: int) -> dict[int, list[str]]:
+        """Get tags for all posts in a channel. Returns {message_id: [tag1, tag2, ...]}."""
+        # Supabase doesn't support complex joins easily, so fetch separately
+        posts = self.db.execute(
+            lambda: self.db.client.table("ct_posts")
+            .select("id, message_id")
+            .eq("channel_id", channel_id)
+            .execute()
+        )
+        post_id_to_msg = {r["id"]: r["message_id"] for r in posts.data}
+
+        links = self.db.execute(
+            lambda: self.db.client.table("ct_post_topics")
+            .select("post_id, ct_topics(name)")
+            .execute()
+        )
+        result: dict[int, list[str]] = {}
+        for row in links.data:
+            post_id = row["post_id"]
+            if post_id in post_id_to_msg and row.get("ct_topics"):
+                mid = post_id_to_msg[post_id]
+                if mid not in result:
+                    result[mid] = []
+                result[mid].append(row["ct_topics"]["name"])
+        return result
 
     def link_post_topic(self, post_id: int, topic_id: int):
         self.db.execute(
@@ -400,6 +466,191 @@ class DatabaseQueries:
             .execute()
         )
         return result.count or 0
+
+    # --- TOC ---
+
+    def has_new_posts_since_toc(self, channel_id: int) -> bool:
+        """Check if there are posts newer than last TOC generation."""
+        channel = self.get_channel_by_id(channel_id)
+        if not channel:
+            return True
+        toc_updated_at = getattr(channel, "toc_updated_at", None)
+        if not toc_updated_at:
+            return True  # no TOC yet → needs generation
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_posts")
+            .select("created_at")
+            .eq("channel_id", channel_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not result.data or not result.data[0].get("created_at"):
+            return False
+        return result.data[0]["created_at"] > toc_updated_at
+
+    # --- Subscriptions ---
+
+    def subscribe_user(self, user_id: int, channel_id: int):
+        self.db.execute(
+            lambda: self.db.client.table("ct_user_subscriptions")
+            .upsert(
+                {"user_id": user_id, "channel_id": channel_id},
+                on_conflict="user_id,channel_id",
+            )
+            .execute()
+        )
+
+    def unsubscribe_user(self, user_id: int, channel_id: int):
+        self.db.execute(
+            lambda: self.db.client.table("ct_user_subscriptions")
+            .delete()
+            .eq("user_id", user_id)
+            .eq("channel_id", channel_id)
+            .execute()
+        )
+
+    def is_user_subscribed(self, user_id: int, channel_id: int) -> bool:
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_user_subscriptions")
+            .select("user_id")
+            .eq("user_id", user_id)
+            .eq("channel_id", channel_id)
+            .execute()
+        )
+        return bool(result.data)
+
+    def get_user_subscriptions(self, user_id: int) -> list[Channel]:
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_user_subscriptions")
+            .select("channel_id, ct_channels(*)")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        channels = []
+        for row in result.data:
+            ch = row.get("ct_channels")
+            if ch and ch.get("is_active"):
+                channels.append(Channel.from_dict(ch))
+        channels.sort(key=lambda c: c.username)
+        return channels
+
+    def get_all_subscribers_with_channels(self) -> dict[int, list[int]]:
+        """Returns {user_id: [channel_id, ...]} for all subscriptions."""
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_user_subscriptions")
+            .select("user_id, channel_id, ct_channels(is_active)")
+            .execute()
+        )
+        subs: dict[int, list[int]] = {}
+        for row in result.data:
+            ch = row.get("ct_channels")
+            if ch and ch.get("is_active"):
+                uid = row["user_id"]
+                if uid not in subs:
+                    subs[uid] = []
+                subs[uid].append(row["channel_id"])
+        return subs
+
+    # --- Digests ---
+
+    def get_posts_for_digest(
+        self, channel_id: int, period_start: str, period_end: str, limit: int = 20
+    ) -> list[Post]:
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_posts")
+            .select("*")
+            .eq("channel_id", channel_id)
+            .gte("post_date", period_start)
+            .lt("post_date", period_end)
+            .not_.is_("classified_at", "null")
+            .not_.is_("description", "null")
+            .order("score", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return [Post.from_dict(row) for row in result.data]
+
+    def count_posts_for_digest(
+        self, channel_id: int, period_start: str, period_end: str
+    ) -> int:
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_posts")
+            .select("id", count="exact")
+            .eq("channel_id", channel_id)
+            .gte("post_date", period_start)
+            .lt("post_date", period_end)
+            .not_.is_("classified_at", "null")
+            .not_.is_("description", "null")
+            .execute()
+        )
+        return result.count or 0
+
+    def save_channel_digest(
+        self, channel_id: int, period_start: str, period_end: str,
+        content: str, post_count: int,
+    ) -> int:
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_channel_digests")
+            .upsert(
+                {
+                    "channel_id": channel_id,
+                    "period_start": period_start,
+                    "period_end": period_end,
+                    "content": content,
+                    "post_count": post_count,
+                },
+                on_conflict="channel_id,period_start",
+            )
+            .execute()
+        )
+        return result.data[0]["id"]
+
+    def get_latest_digest_period_end(self) -> Optional[str]:
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_channel_digests")
+            .select("period_end")
+            .order("period_end", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if result.data and result.data[0].get("period_end"):
+            return result.data[0]["period_end"]
+        return None
+
+    def get_channel_digests_for_period(self, period_start: str) -> list[dict]:
+        """Get all digests generated for a specific period_start."""
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_channel_digests")
+            .select("*")
+            .eq("period_start", period_start)
+            .execute()
+        )
+        return result.data
+
+    def record_digest_delivery(self, user_id: int, digest_id: int):
+        self.db.execute(
+            lambda: self.db.client.table("ct_digest_deliveries")
+            .upsert(
+                {"user_id": user_id, "digest_id": digest_id},
+                on_conflict="user_id,digest_id",
+            )
+            .execute()
+        )
+
+    def get_undelivered_digest_ids(self, user_id: int, digest_ids: list[int]) -> list[int]:
+        """Return digest_ids from the list that haven't been delivered to user."""
+        if not digest_ids:
+            return []
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_digest_deliveries")
+            .select("digest_id")
+            .eq("user_id", user_id)
+            .in_("digest_id", digest_ids)
+            .execute()
+        )
+        delivered = {row["digest_id"] for row in result.data}
+        return [did for did in digest_ids if did not in delivered]
 
     # --- Stats ---
 
