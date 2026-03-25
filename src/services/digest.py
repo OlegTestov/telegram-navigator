@@ -6,7 +6,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 
-from telegram import Bot
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.bot import messages as msg
 from src.config.constants import (
@@ -234,13 +234,18 @@ async def run_digest_cycle(queries, bot: Bot):
 
         messages = assemble_user_digest(user_digests, period_start, period_end)
 
+        menu_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📋 Открыть меню", callback_data="open_menu")]
+        ])
         try:
-            for text in messages:
+            for i, text in enumerate(messages):
+                is_last = i == len(messages) - 1
                 await bot.send_message(
                     chat_id=user_id,
                     text=text,
                     parse_mode="HTML",
                     disable_web_page_preview=True,
+                    reply_markup=menu_kb if is_last else None,
                 )
             # Record delivery
             for d, _ in user_digests:

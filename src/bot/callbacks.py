@@ -41,6 +41,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "noop":
         return
 
+    if data == "open_menu":
+        context.user_data.pop("search_global", None)
+        context.user_data.pop("search_channel_id", None)
+        has_channels = len(queries.get_active_channels()) > 0
+        welcome = msg.WELCOME_ADMIN if is_admin else msg.WELCOME_USER
+        await query.message.reply_text(
+            welcome, parse_mode="HTML",
+            reply_markup=start_keyboard(has_channels, is_admin),
+        )
+        return
+
     if data == "start":
         context.user_data.pop("search_global", None)
         context.user_data.pop("search_channel_id", None)
