@@ -26,15 +26,16 @@ async def process_channel(channel, queries, bot, client):
     """Process a single channel: fetch → classify → score → update TOC."""
     logger.info("Processing @%s (last_msg_id=%d)", channel.username, channel.last_fetched_message_id)
 
-    # 1. Fetch new posts (use peer_id to avoid username resolution)
-    title, raw_posts, peer_id = await fetch_channel_posts(
+    # 1. Fetch new posts (use peer_id + access_hash to avoid username resolution)
+    title, raw_posts, peer_id, access_hash = await fetch_channel_posts(
         client, channel.username, channel.last_fetched_message_id,
         peer_id=channel.peer_id,
+        access_hash=channel.access_hash,
     )
 
-    # Save peer_id on first resolve
-    if peer_id and peer_id != channel.peer_id:
-        queries.update_channel_peer_id(channel.id, peer_id)
+    # Save peer_id and access_hash for future fast resolution
+    if peer_id and (peer_id != channel.peer_id or access_hash != channel.access_hash):
+        queries.update_channel_peer_id(channel.id, peer_id, access_hash)
 
     if title and title != channel.title:
         queries.update_channel_title(channel.id, title)

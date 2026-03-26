@@ -61,10 +61,10 @@ class DatabaseQueries:
         )
         return Channel.from_dict(result.data[0]) if result.data else None
 
-    def update_channel_peer_id(self, channel_id: int, peer_id: int):
+    def update_channel_peer_id(self, channel_id: int, peer_id: int, access_hash: int = None):
         self.db.execute(
             lambda: self.db.client.table("ct_channels")
-            .update({"peer_id": peer_id})
+            .update({"peer_id": peer_id, "access_hash": access_hash})
             .eq("id", channel_id)
             .execute()
         )

@@ -133,6 +133,8 @@ class SQLiteQueries:
         cols = [r[1] for r in self.conn.execute("PRAGMA table_info(ct_channels)").fetchall()]
         if "peer_id" not in cols:
             self.conn.execute("ALTER TABLE ct_channels ADD COLUMN peer_id INTEGER")
+        if "access_hash" not in cols:
+            self.conn.execute("ALTER TABLE ct_channels ADD COLUMN access_hash INTEGER")
         if "cached_toc" not in cols:
             self.conn.execute("ALTER TABLE ct_channels ADD COLUMN cached_toc TEXT")
         if "toc_updated_at" not in cols:
@@ -186,9 +188,10 @@ class SQLiteQueries:
         )
         self.conn.commit()
 
-    def update_channel_peer_id(self, channel_id: int, peer_id: int):
+    def update_channel_peer_id(self, channel_id: int, peer_id: int, access_hash: int = None):
         self.conn.execute(
-            "UPDATE ct_channels SET peer_id = ? WHERE id = ?", (peer_id, channel_id)
+            "UPDATE ct_channels SET peer_id = ?, access_hash = ? WHERE id = ?",
+            (peer_id, access_hash, channel_id),
         )
         self.conn.commit()
 

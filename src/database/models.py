@@ -16,6 +16,7 @@ class Channel:
     pinned_chat_id: Optional[int] = None
     pinned_content_hash: Optional[str] = None
     peer_id: Optional[int] = None
+    access_hash: Optional[int] = None
     last_fetched_message_id: int = 0
     last_run_at: Optional[datetime] = None
     total_posts_indexed: int = 0
@@ -34,6 +35,7 @@ class Channel:
             pinned_chat_id=data.get("pinned_chat_id"),
             pinned_content_hash=data.get("pinned_content_hash"),
             peer_id=data.get("peer_id"),
+            access_hash=data.get("access_hash"),
             last_fetched_message_id=data.get("last_fetched_message_id", 0),
             last_run_at=data.get("last_run_at"),
             total_posts_indexed=data.get("total_posts_indexed", 0),
