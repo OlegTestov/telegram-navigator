@@ -34,10 +34,14 @@ async def fetch_channel_posts(
     Returns (channel_title, list of post dicts, peer_id).
     """
     try:
-        # Use numeric peer_id if available (avoids username resolution API call)
+        # Try peer_id first (faster), fallback to username resolution
+        entity = None
         if peer_id:
-            entity = await client.get_entity(PeerChannel(peer_id))
-        else:
+            try:
+                entity = await client.get_entity(PeerChannel(peer_id))
+            except (ValueError, Exception) as e:
+                logger.warning("PeerChannel(%d) failed for @%s, falling back to username: %s", peer_id, channel_username, e)
+        if entity is None:
             entity = await client.get_entity(channel_username)
 
         resolved_peer_id = entity.id
