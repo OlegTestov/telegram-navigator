@@ -67,18 +67,20 @@ async def _get_query_embedding(query: str) -> list[float] | None:
 
 def _format_search_results(posts: list, channel_username: str = None) -> list[str]:
     """Format search results with inline links."""
+    import html as html_lib
     lines = []
     if channel_username:
         lines.append(f"\n📢 @{channel_username}:")
     for p in posts:
-        desc = p.description or p.text[:60]
+        desc = html_lib.escape(p.description or p.text[:60])
         lines.append(f'• <a href="{p.post_url}">{desc}</a>')
     return lines
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text(msg.SEARCH_PROMPT_GLOBAL)
+        context.user_data["search_global"] = True
+        await update.message.reply_text(msg.SEARCH_PROMPT_GLOBAL, parse_mode="HTML")
         return
 
     query = " ".join(context.args)
