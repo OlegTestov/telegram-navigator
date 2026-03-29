@@ -109,9 +109,14 @@ async def _do_global_search(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         )
         return
 
-    text = f"🔍 Результаты по «{query}»:" + "\n".join(results_lines)
-    if len(text) > 4000:
-        text = text[:4000] + "\n..."
+    header = f"🔍 Результаты по «{query}»:"
+    # Build text line by line to avoid cutting HTML tags
+    text = header
+    for line in results_lines:
+        if len(text) + len(line) + 1 > 4000:
+            text += "\n..."
+            break
+        text += "\n" + line
     await update.message.reply_text(
         text, parse_mode="HTML", disable_web_page_preview=True,
         reply_markup=search_results_keyboard(),
@@ -140,9 +145,13 @@ async def _do_channel_search(
 
     channel = queries.get_channel_by_id(channel_id)
     lines = _format_search_results(posts, channel.username)
-    text = f"🔍 Результаты по «{query}»:" + "\n".join(lines)
-    if len(text) > 4000:
-        text = text[:4000] + "\n..."
+    header = f"🔍 Результаты по «{query}»:"
+    text = header
+    for line in lines:
+        if len(text) + len(line) + 1 > 4000:
+            text += "\n..."
+            break
+        text += "\n" + line
     await update.message.reply_text(
         text, parse_mode="HTML", disable_web_page_preview=True,
         reply_markup=search_results_keyboard(channel_id),
