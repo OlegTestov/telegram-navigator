@@ -96,9 +96,9 @@ async def _do_global_search(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     results_lines = []
     for ch in channels:
         if hasattr(queries, "hybrid_search"):
-            posts = queries.hybrid_search(ch.id, query, query_emb, limit=10)
+            posts = queries.hybrid_search(ch.id, query, query_emb, limit=7)
         else:
-            posts = queries.search_posts(ch.id, query, limit=10)
+            posts = queries.search_posts(ch.id, query, limit=7)
         if posts:
             results_lines.extend(_format_search_results(posts, ch.username))
 
@@ -132,9 +132,9 @@ async def _do_channel_search(
     query_emb = await _get_query_embedding(query)
 
     if hasattr(queries, "hybrid_search"):
-        posts = queries.hybrid_search(channel_id, query, query_emb, limit=10)
+        posts = queries.hybrid_search(channel_id, query, query_emb, limit=7)
     else:
-        posts = queries.search_posts(channel_id, query, limit=10)
+        posts = queries.search_posts(channel_id, query, limit=7)
 
     if not posts:
         await update.message.reply_text(
