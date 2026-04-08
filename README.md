@@ -161,7 +161,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR
 - [ ] LLM abstraction layer (Claude, Ollama, OpenRouter)
 - [ ] Multi-admin RBAC
 - [ ] Test suite
-- [ ] More languages (FILTERED, etc.)
+- [ ] More languages
 - [ ] Per-channel language for TOC and LLM prompts
 
 ## License
