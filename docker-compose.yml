@@ -1,0 +1,16 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    command: ["python", "-m", "src.scheduler_main"]
+    restart: "no"
+    profiles: ["scheduler"]

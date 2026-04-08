@@ -9,7 +9,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.types import InputPeerChannel
 
-from src.config.settings import TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION_STRING
+from src.config.settings import TELEGRAM_API_HASH, TELEGRAM_API_ID, TELEGRAM_SESSION_STRING
 from src.utils.errors import FetchError
 
 logger = logging.getLogger(__name__)
@@ -27,9 +27,9 @@ def create_telethon_client() -> TelegramClient:
 async def _collect_posts(client, entity, channel_username, last_message_id):
     """Iterate messages and collect text posts."""
     posts = []
-    async for message in client.iter_messages(
-        entity, min_id=last_message_id, limit=500
-    ):
+    # First fetch: up to 5000 posts; incremental updates: up to 500
+    fetch_limit = 5000 if last_message_id == 0 else 500
+    async for message in client.iter_messages(entity, min_id=last_message_id, limit=fetch_limit):
         text = message.text or ""
         if not text.strip():
             continue
@@ -44,16 +44,18 @@ async def _collect_posts(client, entity, channel_username, last_message_id):
         if message.reactions and message.reactions.results:
             reactions_count = sum(r.count for r in message.reactions.results)
 
-        posts.append({
-            "message_id": message.id,
-            "text": text,
-            "post_date": msg_date.isoformat(),
-            "post_url": f"https://t.me/{channel_username}/{message.id}",
-            "has_media": message.media is not None,
-            "views": views,
-            "forwards": forwards,
-            "reactions_count": reactions_count,
-        })
+        posts.append(
+            {
+                "message_id": message.id,
+                "text": text,
+                "post_date": msg_date.isoformat(),
+                "post_url": f"https://t.me/{channel_username}/{message.id}",
+                "has_media": message.media is not None,
+                "views": views,
+                "forwards": forwards,
+                "reactions_count": reactions_count,
+            }
+        )
     return posts
 
 
@@ -73,13 +75,15 @@ async def fetch_channel_posts(
     """
     try:
         resolved_by_username = False
+        # First fetch gets a longer timeout (up to 50 min)
+        fetch_timeout = 3000 if last_message_id == 0 else 300
 
         if peer_id and access_hash:
             try:
                 entity = InputPeerChannel(peer_id, access_hash)
                 posts = await asyncio.wait_for(
                     _collect_posts(client, entity, channel_username, last_message_id),
-                    timeout=120,
+                    timeout=fetch_timeout,
                 )
             except asyncio.TimeoutError:
                 raise FetchError(f"Timeout fetching @{channel_username}")
@@ -89,14 +93,14 @@ async def fetch_channel_posts(
                 resolved_by_username = True
                 posts = await asyncio.wait_for(
                     _collect_posts(client, entity, channel_username, last_message_id),
-                    timeout=120,
+                    timeout=fetch_timeout,
                 )
         else:
             entity = await asyncio.wait_for(client.get_entity(channel_username), timeout=30)
             resolved_by_username = True
             posts = await asyncio.wait_for(
                 _collect_posts(client, entity, channel_username, last_message_id),
-                timeout=120,
+                timeout=fetch_timeout,
             )
 
         if resolved_by_username:

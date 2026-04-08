@@ -6,7 +6,7 @@ import struct
 
 from openai import OpenAI
 
-from src.config.settings import OPENAI_API_KEY, OPENAI_EMBEDDING_MODEL, EMBEDDING_BATCH_SIZE
+from src.config.settings import EMBEDDING_BATCH_SIZE, OPENAI_API_KEY, OPENAI_EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
 

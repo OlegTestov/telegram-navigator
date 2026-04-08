@@ -1,4 +1,8 @@
-"""Generate Telegram String Session for Heroku deployment."""
+"""Generate Telegram String Session for Telethon.
+
+Run this script locally (requires interactive phone + OTP input).
+Copy the resulting session string into your .env file as TELEGRAM_SESSION_STRING.
+"""
 
 import asyncio
 import os
@@ -26,7 +30,8 @@ async def main():
         print("=" * 60)
         print(session_string)
         print("=" * 60)
-        print(f"\nheroku config:set TELEGRAM_SESSION_STRING={session_string}")
+        print(f"\nAdd to your .env file:")
+        print(f"TELEGRAM_SESSION_STRING={session_string}")
 
 
 if __name__ == "__main__":

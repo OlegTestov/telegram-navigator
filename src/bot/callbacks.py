@@ -2,23 +2,25 @@
 
 import html as html_lib
 import logging
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from src.config.settings import ADMIN_TELEGRAM_ID
-from src.bot import messages as msg
 from src.bot.keyboards import (
-    start_keyboard,
-    channels_keyboard,
     channel_actions_keyboard,
-    topics_keyboard,
-    posts_keyboard,
     channel_settings_keyboard,
+    channels_keyboard,
+    posts_keyboard,
+    start_keyboard,
     subscriptions_keyboard,
+    topics_keyboard,
 )
-from src.services.toc_generator import generate_compact_toc
+from src.bot.messages import get_messages
 from src.config.constants import POSTS_PER_PAGE
+from src.config.settings import ADMIN_TELEGRAM_ID
+from src.services.toc_generator import generate_compact_toc
 from src.utils.helpers import truncate
+from src.utils.i18n import get_user_lang
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +48,43 @@ async def _route_callback(query, data, update, context):
     """Route callback by data prefix."""
     queries = _get_queries(context)
     is_admin = update.effective_user.id == ADMIN_TELEGRAM_ID
+    lang = get_user_lang(update, context)
+    msg = get_messages(lang)
 
     if data == "noop":
         return
+
+    # --- Language selection ---
+
+    if data == "set_lang":
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("\U0001f1f7\U0001f1fa Русский", callback_data="lang:ru"),
+                    InlineKeyboardButton("\U0001f1ec\U0001f1e7 English", callback_data="lang:en"),
+                ],
+                [InlineKeyboardButton(msg.KB_BACK, callback_data="start")],
+            ]
+        )
+        await query.edit_message_text(msg.CHOOSE_LANGUAGE, reply_markup=kb)
+        return
+
+    if data.startswith("lang:"):
+        new_lang = data.split(":")[1]
+        queries.set_user_language(update.effective_user.id, new_lang)
+        context.user_data["lang"] = new_lang
+        lang = new_lang
+        msg = get_messages(new_lang)
+        has_channels = len(queries.get_active_channels()) > 0
+        welcome = msg.WELCOME_ADMIN if is_admin else msg.WELCOME_USER
+        await query.edit_message_text(
+            welcome,
+            parse_mode="HTML",
+            reply_markup=start_keyboard(has_channels, is_admin, lang=new_lang),
+        )
+        return
+
+    # --- Main menu ---
 
     if data == "open_menu":
         context.user_data.pop("search_global", None)
@@ -56,8 +92,9 @@ async def _route_callback(query, data, update, context):
         has_channels = len(queries.get_active_channels()) > 0
         welcome = msg.WELCOME_ADMIN if is_admin else msg.WELCOME_USER
         await query.message.reply_text(
-            welcome, parse_mode="HTML",
-            reply_markup=start_keyboard(has_channels, is_admin),
+            welcome,
+            parse_mode="HTML",
+            reply_markup=start_keyboard(has_channels, is_admin, lang=lang),
         )
         return
 
@@ -67,8 +104,9 @@ async def _route_callback(query, data, update, context):
         has_channels = len(queries.get_active_channels()) > 0
         welcome = msg.WELCOME_ADMIN if is_admin else msg.WELCOME_USER
         await query.edit_message_text(
-            welcome, parse_mode="HTML",
-            reply_markup=start_keyboard(has_channels, is_admin),
+            welcome,
+            parse_mode="HTML",
+            reply_markup=start_keyboard(has_channels, is_admin, lang=lang),
         )
         return
 
@@ -76,18 +114,14 @@ async def _route_callback(query, data, update, context):
         context.user_data.pop("search_global", None)
         context.user_data.pop("search_channel_id", None)
         prompt = msg.ADD_CHANNEL_PROMPT if is_admin else msg.SUGGEST_CHANNEL_PROMPT
-        back_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Назад", callback_data="start")]
-        ])
+        back_kb = InlineKeyboardMarkup([[InlineKeyboardButton(msg.KB_BACK, callback_data="start")]])
         await query.edit_message_text(prompt, parse_mode="HTML", reply_markup=back_kb)
         return
 
     if data == "search_global":
         context.user_data.pop("search_channel_id", None)
         context.user_data["search_global"] = True
-        back_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Назад", callback_data="start")]
-        ])
+        back_kb = InlineKeyboardMarkup([[InlineKeyboardButton(msg.KB_BACK, callback_data="start")]])
         await query.edit_message_text(msg.SEARCH_PROMPT_GLOBAL, parse_mode="HTML", reply_markup=back_kb)
         return
 
@@ -97,8 +131,9 @@ async def _route_callback(query, data, update, context):
             await query.edit_message_text(msg.NO_CHANNELS)
             return
         await query.edit_message_text(
-            msg.CHANNELS_HEADER, parse_mode="HTML",
-            reply_markup=channels_keyboard(channels),
+            msg.CHANNELS_HEADER,
+            parse_mode="HTML",
+            reply_markup=channels_keyboard(channels, lang=lang),
         )
         return
 
@@ -113,7 +148,7 @@ async def _route_callback(query, data, update, context):
         has_toc = bool(channel.cached_toc)
         user_id = update.effective_user.id
         is_subscribed = queries.is_user_subscribed(user_id, channel_id)
-        kb = channel_actions_keyboard(channel_id, is_admin, has_toc, is_subscribed)
+        kb = channel_actions_keyboard(channel_id, is_admin, has_toc, is_subscribed, lang=lang)
 
         if channel.cached_toc:
             await query.edit_message_text(
@@ -148,7 +183,7 @@ async def _route_callback(query, data, update, context):
 
         user_id = update.effective_user.id
         is_subscribed = queries.is_user_subscribed(user_id, channel_id)
-        kb = channel_actions_keyboard(channel_id, is_admin, True, is_subscribed)
+        kb = channel_actions_keyboard(channel_id, is_admin, True, is_subscribed, lang=lang)
 
         # Skip if no new posts since last TOC
         if channel.cached_toc and hasattr(queries, "has_new_posts_since_toc"):
@@ -182,8 +217,9 @@ async def _route_callback(query, data, update, context):
             await query.edit_message_text(msg.NO_TOPICS)
             return
         await query.edit_message_text(
-            msg.TOPICS_HEADER, parse_mode="HTML",
-            reply_markup=topics_keyboard(topics, channel_id, page),
+            msg.TOPICS_HEADER,
+            parse_mode="HTML",
+            reply_markup=topics_keyboard(topics, channel_id, page, lang=lang),
         )
         return
 
@@ -202,7 +238,7 @@ async def _route_callback(query, data, update, context):
         posts = queries.get_posts_by_topic(topic.id, page=page, limit=POSTS_PER_PAGE)
         total = queries.get_topic_post_count(topic.id)
 
-        emoji = topic.emoji or "📌"
+        emoji = topic.emoji or "\U0001f4cc"
         lines = [f"{emoji} <b>{html_lib.escape(topic.name)}</b> ({total} постов)"]
         if topic.summary:
             lines.append(f"<i>{html_lib.escape(topic.summary)}</i>")
@@ -220,7 +256,7 @@ async def _route_callback(query, data, update, context):
             text,
             parse_mode="HTML",
             disable_web_page_preview=True,
-            reply_markup=posts_keyboard(posts, channel_id, slug, page, total),
+            reply_markup=posts_keyboard(posts, channel_id, slug, page, total, lang=lang),
         )
         return
 
@@ -238,18 +274,19 @@ async def _route_callback(query, data, update, context):
         user_id = update.effective_user.id
         channels = queries.get_active_channels()
         if not channels:
-            back_kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Назад", callback_data="start")]
-            ])
+            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton(msg.KB_BACK, callback_data="start")]])
             await query.edit_message_text(
-                msg.SUBS_EMPTY, parse_mode="HTML", reply_markup=back_kb,
+                msg.SUBS_EMPTY,
+                parse_mode="HTML",
+                reply_markup=back_kb,
             )
             return
         subs = queries.get_user_subscriptions(user_id)
         subscribed_ids = {ch.id for ch in subs}
         await query.edit_message_text(
-            msg.SUBS_HEADER, parse_mode="HTML",
-            reply_markup=subscriptions_keyboard(channels, subscribed_ids),
+            msg.SUBS_HEADER,
+            parse_mode="HTML",
+            reply_markup=subscriptions_keyboard(channels, subscribed_ids, lang=lang),
         )
         return
 
@@ -265,8 +302,9 @@ async def _route_callback(query, data, update, context):
         subs = queries.get_user_subscriptions(user_id)
         subscribed_ids = {ch.id for ch in subs}
         await query.edit_message_text(
-            msg.SUBS_HEADER, parse_mode="HTML",
-            reply_markup=subscriptions_keyboard(channels, subscribed_ids),
+            msg.SUBS_HEADER,
+            parse_mode="HTML",
+            reply_markup=subscriptions_keyboard(channels, subscribed_ids, lang=lang),
         )
         return
 
@@ -279,7 +317,7 @@ async def _route_callback(query, data, update, context):
         user_id = update.effective_user.id
         queries.subscribe_user(user_id, channel_id)
         has_toc = bool(channel.cached_toc)
-        kb = channel_actions_keyboard(channel_id, is_admin, has_toc, is_subscribed=True)
+        kb = channel_actions_keyboard(channel_id, is_admin, has_toc, is_subscribed=True, lang=lang)
         text = msg.SUBSCRIBED.format(username=channel.username)
         await query.edit_message_text(text, reply_markup=kb)
         return
@@ -293,7 +331,7 @@ async def _route_callback(query, data, update, context):
         user_id = update.effective_user.id
         queries.unsubscribe_user(user_id, channel_id)
         has_toc = bool(channel.cached_toc)
-        kb = channel_actions_keyboard(channel_id, is_admin, has_toc, is_subscribed=False)
+        kb = channel_actions_keyboard(channel_id, is_admin, has_toc, is_subscribed=False, lang=lang)
         text = msg.UNSUBSCRIBED.format(username=channel.username)
         await query.edit_message_text(text, reply_markup=kb)
         return
@@ -312,10 +350,10 @@ async def _route_callback(query, data, update, context):
         text = msg.SETTINGS_INFO.format(
             username=channel.username,
             total_posts=channel.total_posts_indexed,
-            last_run=channel.last_run_at or "ещё не было",
+            last_run=channel.last_run_at or "---",
         )
         await query.edit_message_text(
-            text, parse_mode="HTML", reply_markup=channel_settings_keyboard(channel)
+            text, parse_mode="HTML", reply_markup=channel_settings_keyboard(channel, lang=lang)
         )
         return
 
@@ -325,9 +363,7 @@ async def _route_callback(query, data, update, context):
             return
         channel_id = int(data.split(":")[1])
         channel = queries.get_channel_by_id(channel_id)
-        await query.edit_message_text(
-            msg.PINNED_PROMPT.format(username=channel.username)
-        )
+        await query.edit_message_text(msg.PINNED_PROMPT.format(username=channel.username))
         return
 
     if data.startswith("unpin:"):
@@ -353,9 +389,7 @@ async def _route_callback(query, data, update, context):
         channel_id = int(data.split(":")[1])
         channel = queries.get_channel_by_id(channel_id)
         queries.delete_channel(channel_id)
-        await query.edit_message_text(
-            msg.CHANNEL_DELETED.format(username=channel.username)
-        )
+        await query.edit_message_text(msg.CHANNEL_DELETED.format(username=channel.username))
         return
 
     logger.warning("Unhandled callback: %s", data)

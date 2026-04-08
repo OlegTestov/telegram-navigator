@@ -1,0 +1,14 @@
+.env
+.env.*
+.venv/
+venv/
+data/
+.git/
+.github/
+.claude/
+__pycache__/
+*.pyc
+*.session
+docs/
+*.md
+Makefile

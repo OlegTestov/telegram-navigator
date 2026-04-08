@@ -1,7 +1,13 @@
+# Core
 python-telegram-bot>=21.0
 telethon==1.36.0
 google-genai>=1.0.0
-supabase>=2.0.0
-tenacity>=8.2.0
 python-dotenv>=1.0.0
+tenacity>=8.2.0
+
+# Optional: Supabase backend (DB_BACKEND=supabase)
+supabase>=2.0.0
+
+# Optional: OpenAI embeddings for hybrid search
 openai>=1.0.0
+sqlite-vec>=0.1.6

@@ -3,20 +3,19 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from google import genai
 
-from src.database.models import Channel, Post
-from src.config.settings import GEMINI_API_KEY, GEMINI_MODEL
 from src.config.constants import (
-    TOC_MAX_LENGTH,
     TOC_GROUPS_COUNT,
+    TOC_MAX_LENGTH,
     TOC_POSTS_PER_GROUP,
     TOC_POSTS_PERIOD_DAYS,
-    MAX_POST_TEXT_FOR_LLM,
 )
 from src.config.prompts import TOC_GROUPING_PROMPT
+from src.config.settings import GEMINI_API_KEY, GEMINI_MODEL
+from src.database.models import Channel, Post
 from src.utils.helpers import content_hash, truncate
 
 logger = logging.getLogger(__name__)
@@ -70,7 +69,7 @@ async def generate_toc_groups(
                 model=GEMINI_MODEL,
                 contents=prompt,
             ),
-            timeout=60,
+            timeout=180,
         )
         return _parse_grouping_response(response.text)
     except asyncio.TimeoutError:
@@ -92,10 +91,12 @@ def _parse_grouping_response(text: str) -> list[dict]:
     data = json.loads(text[start : end + 1])
     groups = []
     for item in data:
-        groups.append({
-            "group_name": item["group_name"],
-            "post_ids": [int(pid) for pid in item["post_ids"]],
-        })
+        groups.append(
+            {
+                "group_name": item["group_name"],
+                "post_ids": [int(pid) for pid in item["post_ids"]],
+            }
+        )
     return groups
 
 
@@ -107,10 +108,12 @@ def _fallback_grouping(posts: list[Post]) -> list[dict]:
     for i in range(TOC_GROUPS_COUNT):
         chunk = sorted_posts[i * chunk_size : (i + 1) * chunk_size]
         if chunk:
-            groups.append({
-                "group_name": f"Группа {i + 1}",
-                "post_ids": [p.message_id for p in chunk],
-            })
+            groups.append(
+                {
+                    "group_name": f"Группа {i + 1}",
+                    "post_ids": [p.message_id for p in chunk],
+                }
+            )
     return groups
 
 
@@ -139,7 +142,7 @@ async def generate_compact_toc(channel: Channel, queries) -> str:
     post_map = {p.message_id: p for p in all_posts}
 
     date_str = datetime.now(timezone.utc).strftime("%d.%m.%Y")
-    header = f'<b>📚 Оглавление @{channel.username}</b>\nОбновлено: {date_str}\n'
+    header = f"<b>📚 Оглавление @{channel.username}</b>\nОбновлено: {date_str}\n"
 
     sections = []
     chars_used = len(header)
@@ -176,8 +179,8 @@ async def generate_compact_toc(channel: Channel, queries) -> str:
 
         blockquote_content = "\n".join(post_lines)
         section = (
-            f'\n<b>{emoji} {group_name}</b> ({total_in_group})\n'
-            f'<blockquote expandable>{blockquote_content}</blockquote>'
+            f"\n<b>{emoji} {group_name}</b> ({total_in_group})\n"
+            f"<blockquote expandable>{blockquote_content}</blockquote>"
         )
 
         # Check if we exceed limit
@@ -186,8 +189,7 @@ async def generate_compact_toc(channel: Channel, queries) -> str:
             for trim in range(len(post_lines) - 1, 2, -1):
                 trimmed = "\n".join(post_lines[:trim])
                 section = (
-                    f'\n<b>{emoji} {group_name}</b> ({total_in_group})\n'
-                    f'<blockquote expandable>{trimmed}</blockquote>'
+                    f"\n<b>{emoji} {group_name}</b> ({total_in_group})\n<blockquote expandable>{trimmed}</blockquote>"
                 )
                 if chars_used + len(section) <= TOC_MAX_LENGTH:
                     break
@@ -200,7 +202,7 @@ async def generate_compact_toc(channel: Channel, queries) -> str:
     toc = header + "".join(sections)
 
     if len(toc) > TOC_MAX_LENGTH:
-        toc = toc[:TOC_MAX_LENGTH - 1] + "…"
+        toc = toc[: TOC_MAX_LENGTH - 1] + "…"
 
     return toc
 

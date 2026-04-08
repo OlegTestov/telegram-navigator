@@ -3,26 +3,26 @@
 import logging
 import sys
 
-from telegram import Update, BotCommand
+from telegram import BotCommand, Update
 from telegram.ext import (
     Application,
-    CommandHandler,
     CallbackQueryHandler,
+    CommandHandler,
     MessageHandler,
     filters,
 )
 
+from src.bot.callbacks import handle_callback
+from src.bot.handlers import (
+    channels_command,
+    handle_text_message,
+    help_command,
+    search_command,
+    start_command,
+    stats_command,
+)
 from src.config.settings import TELEGRAM_BOT_TOKEN, validate_config
 from src.database.factory import create_queries
-from src.bot.handlers import (
-    start_command,
-    help_command,
-    channels_command,
-    stats_command,
-    search_command,
-    handle_text_message,
-)
-from src.bot.callbacks import handle_callback
 
 logger = logging.getLogger(__name__)
 
@@ -32,23 +32,29 @@ async def post_init(application: Application) -> None:
     # Set up database
     application.bot_data["queries"] = create_queries()
 
-    await application.bot.set_my_commands([
-        BotCommand("start", "🏠 Начало"),
-        BotCommand("channels", "📢 Список каналов"),
-        BotCommand("search", "🔍 Поиск по постам"),
-        BotCommand("stats", "📊 Статистика"),
-        BotCommand("help", "📖 Помощь"),
-    ])
+    ru_commands = [
+        BotCommand("start", "\U0001f3e0 Начало"),
+        BotCommand("channels", "\U0001f4e2 Список каналов"),
+        BotCommand("search", "\U0001f50d Поиск по постам"),
+        BotCommand("stats", "\U0001f4ca Статистика"),
+        BotCommand("help", "\U0001f4d6 Помощь"),
+    ]
+    en_commands = [
+        BotCommand("start", "\U0001f3e0 Start"),
+        BotCommand("channels", "\U0001f4e2 Channel list"),
+        BotCommand("search", "\U0001f50d Search posts"),
+        BotCommand("stats", "\U0001f4ca Statistics"),
+        BotCommand("help", "\U0001f4d6 Help"),
+    ]
+
+    await application.bot.set_my_commands(en_commands)  # default fallback
+    await application.bot.set_my_commands(ru_commands, language_code="ru")
+    await application.bot.set_my_commands(en_commands, language_code="en")
     logger.info("Bot initialized")
 
 
 def create_application() -> Application:
-    application = (
-        Application.builder()
-        .token(TELEGRAM_BOT_TOKEN)
-        .post_init(post_init)
-        .build()
-    )
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
     # Command handlers
     application.add_handler(CommandHandler("start", start_command))
@@ -61,9 +67,7 @@ def create_application() -> Application:
     application.add_handler(CallbackQueryHandler(handle_callback))
 
     # Text message handler (channel/post URLs)
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
-    )
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
 
     return application
 

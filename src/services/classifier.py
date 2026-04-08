@@ -3,11 +3,12 @@
 import asyncio
 import json
 import logging
+
 from google import genai
 
-from src.config.settings import GEMINI_API_KEY, GEMINI_MODEL, BATCH_SIZE
-from src.config.prompts import CLASSIFICATION_PROMPT, TOPIC_SUMMARY_PROMPT
 from src.config.constants import MAX_POST_TEXT_FOR_LLM
+from src.config.prompts import CLASSIFICATION_PROMPT, TOPIC_SUMMARY_PROMPT
+from src.config.settings import BATCH_SIZE, GEMINI_API_KEY, GEMINI_MODEL
 from src.utils.errors import ClassificationError
 
 logger = logging.getLogger(__name__)
@@ -109,12 +110,14 @@ def _parse_classification_response(text: str, expected_count: int) -> list[dict]
 
     results = []
     for item in data:
-        results.append({
-            "post_index": item.get("post_index", len(results)),
-            "topics": item.get("topics", ["Прочее"]),
-            "description": item.get("description", "")[:50],
-            "usefulness": min(10, max(1, item.get("usefulness", 5))),
-        })
+        results.append(
+            {
+                "post_index": item.get("post_index", len(results)),
+                "topics": item.get("topics", ["Прочее"]),
+                "description": item.get("description", "")[:50],
+                "usefulness": min(10, max(1, item.get("usefulness", 5))),
+            }
+        )
 
     return results
 

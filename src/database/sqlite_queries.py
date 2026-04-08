@@ -7,9 +7,9 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
 
+from src.config.constants import FRESHNESS_HALF_LIFE_DAYS, POSTS_PER_PAGE
 from src.database.models import Channel, Post, Topic
 from src.utils.helpers import slugify
-from src.config.constants import FRESHNESS_HALF_LIFE_DAYS, POSTS_PER_PAGE
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +98,12 @@ CREATE TABLE IF NOT EXISTS ct_digest_deliveries (
     sent_at TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, digest_id)
 );
+
+CREATE TABLE IF NOT EXISTS ct_user_preferences (
+    user_id INTEGER PRIMARY KEY,
+    language TEXT NOT NULL DEFAULT 'ru',
+    created_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 
@@ -117,6 +123,7 @@ class SQLiteQueries:
         self._vec_enabled = False
         try:
             import sqlite_vec
+
             self.conn.enable_load_extension(True)
             sqlite_vec.load(self.conn)
             self.conn.enable_load_extension(False)
@@ -160,26 +167,18 @@ class SQLiteQueries:
         return self.get_channel_by_username(username)
 
     def get_active_channels(self) -> list[Channel]:
-        rows = self.conn.execute(
-            "SELECT * FROM ct_channels WHERE is_active = 1"
-        ).fetchall()
+        rows = self.conn.execute("SELECT * FROM ct_channels WHERE is_active = 1").fetchall()
         return [Channel.from_dict(_row_to_dict(r)) for r in rows]
 
     def get_channel_by_username(self, username: str) -> Optional[Channel]:
-        row = self.conn.execute(
-            "SELECT * FROM ct_channels WHERE username = ?", (username,)
-        ).fetchone()
+        row = self.conn.execute("SELECT * FROM ct_channels WHERE username = ?", (username,)).fetchone()
         return Channel.from_dict(_row_to_dict(row)) if row else None
 
     def get_channel_by_id(self, channel_id: int) -> Optional[Channel]:
-        row = self.conn.execute(
-            "SELECT * FROM ct_channels WHERE id = ?", (channel_id,)
-        ).fetchone()
+        row = self.conn.execute("SELECT * FROM ct_channels WHERE id = ?", (channel_id,)).fetchone()
         return Channel.from_dict(_row_to_dict(row)) if row else None
 
-    def update_channel_sync(
-        self, channel_id: int, last_message_id: int, total_indexed: int
-    ):
+    def update_channel_sync(self, channel_id: int, last_message_id: int, total_indexed: int):
         self.conn.execute(
             """UPDATE ct_channels
                SET last_fetched_message_id = ?, last_run_at = ?, total_posts_indexed = ?
@@ -196,9 +195,7 @@ class SQLiteQueries:
         self.conn.commit()
 
     def update_channel_title(self, channel_id: int, title: str):
-        self.conn.execute(
-            "UPDATE ct_channels SET title = ? WHERE id = ?", (title, channel_id)
-        )
+        self.conn.execute("UPDATE ct_channels SET title = ? WHERE id = ?", (title, channel_id))
         self.conn.commit()
 
     def set_channel_pinned(self, channel_id: int, chat_id: int, message_id: int):
@@ -231,9 +228,7 @@ class SQLiteQueries:
 
     def has_new_posts_since_toc(self, channel_id: int) -> bool:
         """Check if there are posts newer than last TOC generation."""
-        row = self.conn.execute(
-            "SELECT toc_updated_at FROM ct_channels WHERE id = ?", (channel_id,)
-        ).fetchone()
+        row = self.conn.execute("SELECT toc_updated_at FROM ct_channels WHERE id = ?", (channel_id,)).fetchone()
         if not row or not row["toc_updated_at"]:
             return True  # no TOC yet → needs generation
         newest = self.conn.execute(
@@ -260,9 +255,15 @@ class SQLiteQueries:
                    (channel_id, message_id, text, post_date, post_url, has_media, views, forwards, reactions_count)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    channel_id, p["message_id"], p["text"], p["post_date"],
-                    p["post_url"], int(p.get("has_media", False)),
-                    p.get("views", 0), p.get("forwards", 0), p.get("reactions_count", 0),
+                    channel_id,
+                    p["message_id"],
+                    p["text"],
+                    p["post_date"],
+                    p["post_url"],
+                    int(p.get("has_media", False)),
+                    p.get("views", 0),
+                    p.get("forwards", 0),
+                    p.get("reactions_count", 0),
                 ),
             )
             count += cursor.rowcount
@@ -317,9 +318,7 @@ class SQLiteQueries:
             self.conn.execute("DELETE FROM ct_post_topics WHERE post_id = ?", (row["id"],))
         self.conn.commit()
 
-    def get_posts_by_topic(
-        self, topic_id: int, page: int = 0, limit: int = POSTS_PER_PAGE
-    ) -> list[Post]:
+    def get_posts_by_topic(self, topic_id: int, page: int = 0, limit: int = POSTS_PER_PAGE) -> list[Post]:
         rows = self.conn.execute(
             """SELECT p.* FROM ct_posts p
                JOIN ct_post_topics pt ON p.id = pt.post_id
@@ -394,6 +393,7 @@ class SQLiteQueries:
     ) -> list[Post]:
         """Hybrid vector + keyword search."""
         import struct
+
         scores: dict[int, dict] = {}
 
         # Vector search
@@ -403,7 +403,7 @@ class SQLiteQueries:
             for post_id, distance in vec_results:
                 # OpenAI embeddings are L2-normalized, so:
                 # cosine_similarity = 1 - (L2_distance² / 2)
-                cosine_sim = max(0, 1.0 - (distance ** 2) / 2)
+                cosine_sim = max(0, 1.0 - (distance**2) / 2)
                 scores[post_id] = {"vector": cosine_sim, "keyword": 0.0}
 
         # Keyword search
@@ -445,9 +445,7 @@ class SQLiteQueries:
         return [post for _, post in ranked[:limit]]
 
     def get_channel_post_count(self, channel_id: int) -> int:
-        row = self.conn.execute(
-            "SELECT COUNT(*) as cnt FROM ct_posts WHERE channel_id = ?", (channel_id,)
-        ).fetchone()
+        row = self.conn.execute("SELECT COUNT(*) as cnt FROM ct_posts WHERE channel_id = ?", (channel_id,)).fetchone()
         return row["cnt"] if row else 0
 
     def recalculate_scores(self, channel_id: int):
@@ -562,15 +560,11 @@ class SQLiteQueries:
         self.conn.commit()
 
     def update_topic_summary(self, topic_id: int, summary: str):
-        self.conn.execute(
-            "UPDATE ct_topics SET summary = ? WHERE id = ?", (summary, topic_id)
-        )
+        self.conn.execute("UPDATE ct_topics SET summary = ? WHERE id = ?", (summary, topic_id))
         self.conn.commit()
 
     def get_topic_post_count(self, topic_id: int) -> int:
-        row = self.conn.execute(
-            "SELECT COUNT(*) as cnt FROM ct_post_topics WHERE topic_id = ?", (topic_id,)
-        ).fetchone()
+        row = self.conn.execute("SELECT COUNT(*) as cnt FROM ct_post_topics WHERE topic_id = ?", (topic_id,)).fetchone()
         return row["cnt"] if row else 0
 
     # --- Subscriptions ---
@@ -623,9 +617,7 @@ class SQLiteQueries:
 
     # --- Digests ---
 
-    def get_posts_for_digest(
-        self, channel_id: int, period_start: str, period_end: str, limit: int = 20
-    ) -> list[Post]:
+    def get_posts_for_digest(self, channel_id: int, period_start: str, period_end: str, limit: int = 20) -> list[Post]:
         rows = self.conn.execute(
             """SELECT * FROM ct_posts
                WHERE channel_id = ? AND post_date >= ? AND post_date < ?
@@ -636,7 +628,10 @@ class SQLiteQueries:
         return [Post.from_dict(_row_to_dict(r)) for r in rows]
 
     def count_posts_for_digest(
-        self, channel_id: int, period_start: str, period_end: str,
+        self,
+        channel_id: int,
+        period_start: str,
+        period_end: str,
     ) -> int:
         row = self.conn.execute(
             """SELECT COUNT(*) as cnt FROM ct_posts
@@ -647,8 +642,12 @@ class SQLiteQueries:
         return row["cnt"] if row else 0
 
     def save_channel_digest(
-        self, channel_id: int, period_start: str, period_end: str,
-        content: str, post_count: int,
+        self,
+        channel_id: int,
+        period_start: str,
+        period_end: str,
+        content: str,
+        post_count: int,
     ) -> int:
         cursor = self.conn.execute(
             """INSERT INTO ct_channel_digests (channel_id, period_start, period_end, content, post_count)
@@ -661,9 +660,7 @@ class SQLiteQueries:
         return cursor.lastrowid
 
     def get_latest_digest_period_end(self) -> Optional[str]:
-        row = self.conn.execute(
-            "SELECT MAX(period_end) as latest FROM ct_channel_digests"
-        ).fetchone()
+        row = self.conn.execute("SELECT MAX(period_end) as latest FROM ct_channel_digests").fetchone()
         return row["latest"] if row and row["latest"] else None
 
     def get_channel_digests_for_period(self, period_start: str) -> list[dict]:
@@ -693,6 +690,20 @@ class SQLiteQueries:
         ).fetchall()
         delivered = {row["digest_id"] for row in rows}
         return [did for did in digest_ids if did not in delivered]
+
+    # --- User Preferences ---
+
+    def get_user_language(self, user_id: int) -> str | None:
+        row = self.conn.execute("SELECT language FROM ct_user_preferences WHERE user_id = ?", (user_id,)).fetchone()
+        return row[0] if row else None
+
+    def set_user_language(self, user_id: int, language: str):
+        self.conn.execute(
+            "INSERT INTO ct_user_preferences (user_id, language) VALUES (?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET language = excluded.language",
+            (user_id, language),
+        )
+        self.conn.commit()
 
     # --- Stats ---
 

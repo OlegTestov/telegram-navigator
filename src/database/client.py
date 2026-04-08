@@ -2,7 +2,8 @@
 
 import logging
 from typing import Optional
-from supabase import create_client, Client
+
+from supabase import Client, create_client
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.utils.errors import DatabaseError

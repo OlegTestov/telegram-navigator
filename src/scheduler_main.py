@@ -7,13 +7,13 @@ import sys
 from telegram import Bot
 from telethon.errors import FloodWaitError
 
-from src.config.settings import TELEGRAM_BOT_TOKEN, BATCH_SIZE, EMBEDDINGS_ENABLED, validate_config
 from src.config.constants import FETCH_DELAY_SECONDS
+from src.config.settings import BATCH_SIZE, EMBEDDINGS_ENABLED, TELEGRAM_BOT_TOKEN, validate_config
 from src.database.factory import create_queries
-from src.services.fetcher import create_telethon_client, fetch_channel_posts
 from src.services.classifier import classify_posts, generate_topic_summary
+from src.services.digest import run_digest_cycle, should_run_digest
+from src.services.fetcher import create_telethon_client, fetch_channel_posts
 from src.services.toc_generator import generate_compact_toc, should_update_pinned
-from src.services.digest import should_run_digest, run_digest_cycle
 from src.utils.helpers import content_hash
 
 if EMBEDDINGS_ENABLED:
@@ -28,7 +28,9 @@ async def process_channel(channel, queries, bot, client):
 
     # 1. Fetch new posts (use peer_id + access_hash to avoid username resolution)
     title, raw_posts, peer_id, access_hash = await fetch_channel_posts(
-        client, channel.username, channel.last_fetched_message_id,
+        client,
+        channel.username,
+        channel.last_fetched_message_id,
         peer_id=channel.peer_id,
         access_hash=channel.access_hash,
     )
@@ -62,7 +64,9 @@ async def process_channel(channel, queries, bot, client):
         total_remaining = queries.get_unclassified_count(channel.id)
         logger.info(
             "Classifying batch of %d posts for @%s (%d remaining)",
-            len(unclassified), channel.username, total_remaining,
+            len(unclassified),
+            channel.username,
+            total_remaining,
         )
 
         existing_topics = [t.name for t in queries.get_topics(channel.id)]
@@ -80,9 +84,7 @@ async def process_channel(channel, queries, bot, client):
             post = post_by_idx[idx]
 
             # Save classification
-            queries.set_post_classification(
-                post.id, cls_result["description"], cls_result["usefulness"]
-            )
+            queries.set_post_classification(post.id, cls_result["description"], cls_result["usefulness"])
 
             # Link topics
             for topic_name in cls_result["topics"]:
@@ -96,14 +98,14 @@ async def process_channel(channel, queries, bot, client):
         has_changes = True
 
     # 4. Generate embeddings for posts without them (runs even without new posts)
-    if EMBEDDINGS_ENABLED and hasattr(queries, 'get_posts_without_embeddings'):
+    if EMBEDDINGS_ENABLED and hasattr(queries, "get_posts_without_embeddings"):
         unembedded = queries.get_posts_without_embeddings(channel.id, limit=500)
         while unembedded:
             logger.info("Generating embeddings for %d posts in @%s", len(unembedded), channel.username)
             texts = [f"{p.description or ''} {p.text[:500]}".strip() for p in unembedded]
             embeddings = await generate_embeddings(texts)
             if embeddings and len(embeddings) == len(unembedded):
-                if hasattr(queries, 'vector_search'):
+                if hasattr(queries, "vector_search"):
                     # Supabase: raw list[float] for pgvector
                     pairs = [(post.id, emb) for post, emb in zip(unembedded, embeddings)]
                 else:
@@ -180,7 +182,8 @@ async def run_scheduler():
             except FloodWaitError as e:
                 logger.warning(
                     "FloodWait for %d seconds while processing @%s, sleeping...",
-                    e.seconds, channel.username,
+                    e.seconds,
+                    channel.username,
                 )
                 await asyncio.sleep(e.seconds + 5)
                 # Retry once after waiting

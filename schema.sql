@@ -88,6 +88,12 @@ CREATE TABLE ct_digest_deliveries (
     PRIMARY KEY (user_id, digest_id)
 );
 
+CREATE TABLE ct_user_preferences (
+    user_id BIGINT PRIMARY KEY,
+    language TEXT NOT NULL DEFAULT 'ru',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Vector embeddings (requires pgvector extension)
 CREATE EXTENSION IF NOT EXISTS vector;
 

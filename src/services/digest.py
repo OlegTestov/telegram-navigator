@@ -8,11 +8,12 @@ from datetime import datetime, timedelta, timezone
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
-from src.bot import messages as msg
+from src.bot.messages import get_messages
+from src.bot.messages import ru as msg_ru
 from src.config.constants import (
     DIGEST_INTERVAL_HOURS,
-    DIGEST_MAX_POSTS_PER_CHANNEL,
     DIGEST_MAX_POST_TEXT,
+    DIGEST_MAX_POSTS_PER_CHANNEL,
     DIGEST_MESSAGE_MAX_LENGTH,
 )
 from src.config.settings import GEMINI_MODEL
@@ -45,15 +46,16 @@ async def summarize_posts_for_digest(posts: list) -> list[str]:
         f"Summarize each of the following Telegram channel posts in 1-2 sentences, "
         f"extracting the most important and key information. "
         f"Respond in Russian.\n"
-        f"Return exactly {len(posts)} summaries as a numbered list (1. ... 2. ... etc).\n\n"
-        + "\n\n".join(posts_text)
+        f"Return exactly {len(posts)} summaries as a numbered list (1. ... 2. ... etc).\n\n" + "\n\n".join(posts_text)
     )
 
     try:
         client = _get_client()
         response = await asyncio.wait_for(
             asyncio.to_thread(
-                client.models.generate_content, model=GEMINI_MODEL, contents=prompt,
+                client.models.generate_content,
+                model=GEMINI_MODEL,
+                contents=prompt,
             ),
             timeout=60,
         )
@@ -61,10 +63,7 @@ async def summarize_posts_for_digest(posts: list) -> list[str]:
     except Exception as e:
         logger.error("Gemini summarization failed: %s", e)
         # Fallback: use description or truncated text
-        summaries = [
-            p.description or (p.text[:200] + "..." if len(p.text) > 200 else p.text)
-            for p in posts
-        ]
+        summaries = [p.description or (p.text[:200] + "..." if len(p.text) > 200 else p.text) for p in posts]
 
     # Ensure we have exactly len(posts) summaries
     while len(summaries) < len(posts):
@@ -97,7 +96,7 @@ async def generate_channel_digest_content(channel, posts, total_count: int = Non
         safe_summary = html.escape(summary)
         lines.append(f'  • {safe_summary} (<a href="{post.post_url}">link</a>)')
     if total > DIGEST_MAX_POSTS_PER_CHANNEL:
-        lines.append(msg.DIGEST_MORE_POSTS.format(count=total - DIGEST_MAX_POSTS_PER_CHANNEL))
+        lines.append(msg_ru.DIGEST_MORE_POSTS.format(count=total - DIGEST_MAX_POSTS_PER_CHANNEL))
 
     return "\n".join(lines)
 
@@ -106,14 +105,14 @@ def assemble_user_digest(
     channel_digests: list[tuple[dict, str]],
     period_start: datetime,
     period_end: datetime,
+    msg=None,
 ) -> list[str]:
     """Assemble per-user digest message(s), splitting at ~4000 chars."""
+    if msg is None:
+        msg = msg_ru
     fmt = "%H:%M"
     date_fmt = "%d.%m.%Y"
-    period_str = (
-        f"{period_start.strftime(fmt)} — {period_end.strftime(fmt)}, "
-        f"{period_end.strftime(date_fmt)}"
-    )
+    period_str = f"{period_start.strftime(fmt)} — {period_end.strftime(fmt)}, {period_end.strftime(date_fmt)}"
     header = msg.DIGEST_HEADER.format(period=period_str)
 
     # Join all channel blocks with double newline
@@ -177,30 +176,40 @@ async def run_digest_cycle(queries, bot: Bot):
     generated_digests = []
     for channel in channels:
         total_count = queries.count_posts_for_digest(
-            channel.id, period_start_iso, period_end_iso,
+            channel.id,
+            period_start_iso,
+            period_end_iso,
         )
         if total_count == 0:
             logger.info("No posts for @%s in digest period, skipping", channel.username)
             continue
 
         posts = queries.get_posts_for_digest(
-            channel.id, period_start_iso, period_end_iso,
+            channel.id,
+            period_start_iso,
+            period_end_iso,
             limit=DIGEST_MAX_POSTS_PER_CHANNEL,
         )
         content = await generate_channel_digest_content(channel, posts, total_count)
         digest_id = queries.save_channel_digest(
-            channel.id, period_start_iso, period_end_iso,
-            content, total_count,
+            channel.id,
+            period_start_iso,
+            period_end_iso,
+            content,
+            total_count,
         )
-        generated_digests.append({
-            "id": digest_id,
-            "channel_id": channel.id,
-            "content": content,
-            "channel": channel,
-        })
+        generated_digests.append(
+            {
+                "id": digest_id,
+                "channel_id": channel.id,
+                "content": content,
+                "channel": channel,
+            }
+        )
         logger.info(
             "Generated digest for @%s: %d posts",
-            channel.username, len(posts),
+            channel.username,
+            len(posts),
         )
 
     if not generated_digests:
@@ -235,11 +244,11 @@ async def run_digest_cycle(queries, bot: Bot):
         undelivered_set = set(undelivered_ids)
         user_digests = [(d, c) for d, c in user_digests if d["id"] in undelivered_set]
 
-        messages = assemble_user_digest(user_digests, period_start, period_end)
+        user_lang = queries.get_user_language(user_id) or "ru"
+        user_msg = get_messages(user_lang)
+        messages = assemble_user_digest(user_digests, period_start, period_end, msg=user_msg)
 
-        menu_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 Открыть меню", callback_data="open_menu")]
-        ])
+        menu_kb = InlineKeyboardMarkup([[InlineKeyboardButton(user_msg.KB_OPEN_MENU, callback_data="open_menu")]])
         try:
             for i, text in enumerate(messages):
                 is_last = i == len(messages) - 1
@@ -256,9 +265,16 @@ async def run_digest_cycle(queries, bot: Bot):
             logger.info("Delivered digest to user %d (%d channels)", user_id, len(user_digests))
         except Exception as e:
             error_msg = str(e).lower()
-            permanent = any(kw in error_msg for kw in (
-                "forbidden", "blocked", "deactivated", "not found", "chat not found",
-            ))
+            permanent = any(
+                kw in error_msg
+                for kw in (
+                    "forbidden",
+                    "blocked",
+                    "deactivated",
+                    "not found",
+                    "chat not found",
+                )
+            )
             if permanent:
                 logger.warning("User %d unreachable (%s), removing all subscriptions", user_id, e)
                 for cid in channel_ids:
