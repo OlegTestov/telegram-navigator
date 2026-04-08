@@ -1,5 +1,6 @@
 """Fetch posts from Telegram channels via Telethon."""
 
+import asyncio
 import logging
 from datetime import timezone
 from typing import Optional
@@ -76,16 +77,27 @@ async def fetch_channel_posts(
         if peer_id and access_hash:
             try:
                 entity = InputPeerChannel(peer_id, access_hash)
-                posts = await _collect_posts(client, entity, channel_username, last_message_id)
+                posts = await asyncio.wait_for(
+                    _collect_posts(client, entity, channel_username, last_message_id),
+                    timeout=120,
+                )
+            except asyncio.TimeoutError:
+                raise FetchError(f"Timeout fetching @{channel_username}")
             except Exception as e:
                 logger.warning("InputPeerChannel failed for @%s, resolving by username: %s", channel_username, e)
-                entity = await client.get_entity(channel_username)
+                entity = await asyncio.wait_for(client.get_entity(channel_username), timeout=30)
                 resolved_by_username = True
-                posts = await _collect_posts(client, entity, channel_username, last_message_id)
+                posts = await asyncio.wait_for(
+                    _collect_posts(client, entity, channel_username, last_message_id),
+                    timeout=120,
+                )
         else:
-            entity = await client.get_entity(channel_username)
+            entity = await asyncio.wait_for(client.get_entity(channel_username), timeout=30)
             resolved_by_username = True
-            posts = await _collect_posts(client, entity, channel_username, last_message_id)
+            posts = await asyncio.wait_for(
+                _collect_posts(client, entity, channel_username, last_message_id),
+                timeout=120,
+            )
 
         if resolved_by_username:
             out_peer_id = entity.id

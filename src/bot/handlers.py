@@ -1,5 +1,6 @@
 """Bot command and message handlers."""
 
+import html as html_lib
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -67,7 +68,6 @@ async def _get_query_embedding(query: str) -> list[float] | None:
 
 def _format_search_results(posts: list, channel_username: str = None) -> list[str]:
     """Format search results with inline links."""
-    import html as html_lib
     lines = []
     if channel_username:
         lines.append(f"\n📢 @{channel_username}:")
@@ -109,7 +109,7 @@ async def _do_global_search(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         )
         return
 
-    header = f"🔍 Результаты по «{query}»:"
+    header = f"🔍 Результаты по «{html_lib.escape(query)}»:"
     # Build text line by line to avoid cutting HTML tags
     text = header
     for line in results_lines:
@@ -145,7 +145,7 @@ async def _do_channel_search(
 
     channel = queries.get_channel_by_id(channel_id)
     lines = _format_search_results(posts, channel.username)
-    header = f"🔍 Результаты по «{query}»:"
+    header = f"🔍 Результаты по «{html_lib.escape(query)}»:"
     text = header
     for line in lines:
         if len(text) + len(line) + 1 > 4000:

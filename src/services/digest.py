@@ -51,8 +51,11 @@ async def summarize_posts_for_digest(posts: list) -> list[str]:
 
     try:
         client = _get_client()
-        response = await asyncio.to_thread(
-            client.models.generate_content, model=GEMINI_MODEL, contents=prompt,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.models.generate_content, model=GEMINI_MODEL, contents=prompt,
+            ),
+            timeout=60,
         )
         summaries = _parse_numbered_list(response.text, len(posts))
     except Exception as e:
@@ -253,13 +256,15 @@ async def run_digest_cycle(queries, bot: Bot):
             logger.info("Delivered digest to user %d (%d channels)", user_id, len(user_digests))
         except Exception as e:
             error_msg = str(e).lower()
-            # Auto-unsubscribe if user blocked bot or is unreachable
-            if any(kw in error_msg for kw in ("forbidden", "blocked", "deactivated", "not found", "chat not found")):
+            permanent = any(kw in error_msg for kw in (
+                "forbidden", "blocked", "deactivated", "not found", "chat not found",
+            ))
+            if permanent:
                 logger.warning("User %d unreachable (%s), removing all subscriptions", user_id, e)
                 for cid in channel_ids:
                     queries.unsubscribe_user(user_id, cid)
+                # Record delivery — permanent failure, no point retrying
+                for d, _ in user_digests:
+                    queries.record_digest_delivery(user_id, d["id"])
             else:
-                logger.error("Failed to deliver digest to user %d: %s", user_id, e)
-            # Record delivery anyway to avoid retry loops
-            for d, _ in user_digests:
-                queries.record_digest_delivery(user_id, d["id"])
+                logger.error("Transient error for user %d: %s — will retry next cycle", user_id, e)

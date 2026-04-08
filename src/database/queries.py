@@ -13,6 +13,12 @@ from src.config.constants import FRESHNESS_HALF_LIFE_DAYS, POSTS_PER_PAGE
 logger = logging.getLogger(__name__)
 
 
+def _safe_ilike_pattern(query: str) -> str:
+    """Escape PostgREST special characters in ilike pattern."""
+    escaped = query.replace('"', '\\"')
+    return f'"%{escaped}%"'
+
+
 class DatabaseQueries:
     """All database operations."""
 
@@ -282,7 +288,7 @@ class DatabaseQueries:
 
     def search_posts(self, channel_id: int, query: str, limit: int = 20) -> list[Post]:
         """Search posts by keyword in text and description."""
-        pattern = f"%{query}%"
+        pattern = _safe_ilike_pattern(query)
         result = self.db.execute(
             lambda: self.db.client.table("ct_posts")
             .select("*")
@@ -350,7 +356,7 @@ class DatabaseQueries:
                 }
 
         # Keyword search
-        pattern = f"%{query}%"
+        pattern = _safe_ilike_pattern(query)
         kw_result = self.db.execute(
             lambda: self.db.client.table("ct_posts")
             .select("id,score")

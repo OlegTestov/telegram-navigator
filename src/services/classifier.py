@@ -68,24 +68,29 @@ async def _classify_batch(
 
     try:
         c = _get_client()
-        response = await asyncio.to_thread(
-            c.models.generate_content,
-            model=GEMINI_MODEL,
-            contents=prompt,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                c.models.generate_content,
+                model=GEMINI_MODEL,
+                contents=prompt,
+            ),
+            timeout=60,
         )
         return _parse_classification_response(response.text, len(posts))
+    except asyncio.TimeoutError:
+        logger.error("Gemini classification timeout for batch of %d posts", len(posts))
     except Exception as e:
         logger.error("Gemini classification error: %s", e)
-        # Fallback: return "Прочее" for all posts
-        return [
-            {
-                "post_index": idx,
-                "topics": ["Прочее"],
-                "description": post["text"][:50],
-                "usefulness": 5,
-            }
-            for idx, post in enumerate(posts)
-        ]
+    # Fallback: return "Прочее" for all posts
+    return [
+        {
+            "post_index": idx,
+            "topics": ["Прочее"],
+            "description": post["text"][:50],
+            "usefulness": 5,
+        }
+        for idx, post in enumerate(posts)
+    ]
 
 
 def _parse_classification_response(text: str, expected_count: int) -> list[dict]:
@@ -130,12 +135,17 @@ async def generate_topic_summary(
 
     try:
         c = _get_client()
-        response = await asyncio.to_thread(
-            c.models.generate_content,
-            model=GEMINI_MODEL,
-            contents=prompt,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                c.models.generate_content,
+                model=GEMINI_MODEL,
+                contents=prompt,
+            ),
+            timeout=30,
         )
         return response.text.strip()[:300]
+    except asyncio.TimeoutError:
+        logger.error("Topic summary timeout for '%s'", topic_name)
     except Exception as e:
         logger.error("Topic summary error for '%s': %s", topic_name, e)
-        return ""
+    return ""

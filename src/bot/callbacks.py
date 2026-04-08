@@ -1,5 +1,6 @@
 """Inline keyboard callback handlers."""
 
+import html as html_lib
 import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
@@ -35,6 +36,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     data = query.data
+    try:
+        await _route_callback(query, data, update, context)
+    except (IndexError, ValueError) as e:
+        logger.warning("Malformed callback data: %s (%s)", data, e)
+
+
+async def _route_callback(query, data, update, context):
+    """Route callback by data prefix."""
     queries = _get_queries(context)
     is_admin = update.effective_user.id == ADMIN_TELEGRAM_ID
 
@@ -194,13 +203,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total = queries.get_topic_post_count(topic.id)
 
         emoji = topic.emoji or "📌"
-        lines = [f"{emoji} <b>{topic.name}</b> ({total} постов)"]
+        lines = [f"{emoji} <b>{html_lib.escape(topic.name)}</b> ({total} постов)"]
         if topic.summary:
-            lines.append(f"<i>{topic.summary}</i>")
+            lines.append(f"<i>{html_lib.escape(topic.summary)}</i>")
         lines.append("")
 
         for i, post in enumerate(posts, start=page * POSTS_PER_PAGE + 1):
-            desc = post.description or truncate(post.text, 60)
+            desc = html_lib.escape(post.description or truncate(post.text, 60))
             lines.append(f'{i}. <a href="{post.post_url}">{desc}</a>')
 
         text = "\n".join(lines)

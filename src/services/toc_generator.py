@@ -64,12 +64,18 @@ async def generate_toc_groups(
 
     try:
         c = _get_client()
-        response = await asyncio.to_thread(
-            c.models.generate_content,
-            model=GEMINI_MODEL,
-            contents=prompt,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                c.models.generate_content,
+                model=GEMINI_MODEL,
+                contents=prompt,
+            ),
+            timeout=60,
         )
         return _parse_grouping_response(response.text)
+    except asyncio.TimeoutError:
+        logger.error("TOC grouping timeout")
+        return _fallback_grouping(posts)
     except Exception as e:
         logger.error("TOC grouping error: %s", e)
         return _fallback_grouping(posts)
