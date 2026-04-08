@@ -26,23 +26,42 @@
 ## Быстрый старт (Docker)
 
 ```bash
+git clone https://github.com/olegtestov/telegram-navigator.git
+cd telegram-navigator
 cp .env.example .env
 # Заполните .env (см. Требования ниже)
 docker compose up -d bot
 ```
 
-Запуск планировщика (рекомендуется cron):
-```bash
-docker compose run --rm scheduler
-```
-
 ## Быстрый старт (локально)
 
 ```bash
+git clone https://github.com/olegtestov/telegram-navigator.git
+cd telegram-navigator
 make setup          # создаёт venv, устанавливает зависимости, копирует .env.example
 # Заполните .env
 make run            # запускает бота
 ```
+
+## Первый запуск
+
+Когда бот запущен:
+
+1. **Откройте бота** в Telegram и отправьте `/start`
+2. **Добавьте канал** — нажмите "Добавить канал" и отправьте ссылку вида `t.me/channelname`
+3. **Запустите планировщик** для индексации канала (загрузка постов, классификация, генерация TOC):
+   ```bash
+   # Docker
+   docker compose run --rm scheduler
+   # Локально
+   make scheduler
+   ```
+4. **Посмотрите результат** — вернитесь в бота, выберите канал, нажмите "Создать оглавление"
+5. **Настройте часовой запуск**, чтобы новые посты индексировались автоматически:
+   ```
+   # Добавьте в crontab (crontab -e)
+   0 * * * * cd /path/to/telegram-navigator && docker compose run --rm scheduler >> data/scheduler.log 2>&1
+   ```
 
 ## Требования
 

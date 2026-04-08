@@ -52,7 +52,7 @@ And run [`schema.sql`](../schema.sql) in the Supabase SQL Editor before first st
 ```bash
 heroku create your-app-name
 heroku config:set TELEGRAM_BOT_TOKEN=... TELEGRAM_API_ID=... # etc.
-git push heroku main
+git push heroku main  # or master, depending on your branch name
 ```
 
 The included `Procfile` runs the bot as a worker process.

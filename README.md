@@ -26,23 +26,42 @@ Automatically indexes Telegram channels, classifies posts into topics using Goog
 ## Quick Start (Docker)
 
 ```bash
+git clone https://github.com/olegtestov/telegram-navigator.git
+cd telegram-navigator
 cp .env.example .env
 # Edit .env with your credentials (see Prerequisites below)
 docker compose up -d bot
 ```
 
-Run the scheduler periodically (cron recommended):
-```bash
-docker compose run --rm scheduler
-```
-
 ## Quick Start (Local)
 
 ```bash
+git clone https://github.com/olegtestov/telegram-navigator.git
+cd telegram-navigator
 make setup          # creates venv, installs deps, copies .env.example
 # Edit .env with your credentials
 make run            # starts the bot
 ```
+
+## First Run
+
+Once the bot is running:
+
+1. **Open the bot** in Telegram and send `/start`
+2. **Add a channel** — tap "Add channel" and send a link like `t.me/channelname`
+3. **Run the scheduler** to index the channel (fetches posts, classifies them, generates TOC):
+   ```bash
+   # Docker
+   docker compose run --rm scheduler
+   # Local
+   make scheduler
+   ```
+4. **View the result** — go back to the bot, select the channel, tap "Generate TOC"
+5. **Set up hourly scheduling** so new posts are indexed automatically:
+   ```
+   # Add to crontab (crontab -e)
+   0 * * * * cd /path/to/telegram-navigator && docker compose run --rm scheduler >> data/scheduler.log 2>&1
+   ```
 
 ## Prerequisites
 
