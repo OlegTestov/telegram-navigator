@@ -1,10 +1,10 @@
 # telegram-navigator
 
+[🇷🇺 Документация на русском](README.ru.md)
+
 **AI-powered navigator for Telegram channels — auto-indexing, topic classification, smart search, and digests.**
 
 Automatically indexes Telegram channels, classifies posts into topics using Google Gemini, generates navigable tables of contents, and delivers periodic digests to subscribers. Supports English and Russian UI with per-user language detection.
-
-[🇷🇺 Русский](README.ru.md)
 
 ## Features
 
