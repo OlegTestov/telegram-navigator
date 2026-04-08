@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "telegram-navigator"
 version = "0.1.0"
-description = "AI-powered table-of-contents bot for Telegram channels"
+description = "AI-powered navigator for Telegram channels — auto-indexing, topic classification, smart search, and digests"
 requires-python = ">=3.12"
 license = "MIT"
 dependencies = [

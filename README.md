@@ -1,6 +1,6 @@
 # telegram-navigator
 
-**AI-powered table-of-contents bot for Telegram channels.**
+**AI-powered navigator for Telegram channels — auto-indexing, topic classification, smart search, and digests.**
 
 Automatically indexes Telegram channels, classifies posts into topics using Google Gemini, generates navigable tables of contents, and delivers periodic digests to subscribers. Supports English and Russian UI with per-user language detection.
 
@@ -26,7 +26,7 @@ Automatically indexes Telegram channels, classifies posts into topics using Goog
 ## Quick Start (Docker)
 
 ```bash
-git clone https://github.com/olegtestov/telegram-navigator.git
+git clone https://github.com/OlegTestov/telegram-navigator.git
 cd telegram-navigator
 cp .env.example .env
 # Edit .env with your credentials (see Prerequisites below)
@@ -36,7 +36,7 @@ docker compose up -d bot
 ## Quick Start (Local)
 
 ```bash
-git clone https://github.com/olegtestov/telegram-navigator.git
+git clone https://github.com/OlegTestov/telegram-navigator.git
 cd telegram-navigator
 make setup          # creates venv, installs deps, copies .env.example
 # Edit .env with your credentials

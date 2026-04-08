@@ -5,7 +5,7 @@ Thank you for your interest in contributing! Here's how to get started.
 ## Development Setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/telegram-navigator.git
+git clone https://github.com/OlegTestov/telegram-navigator.git
 cd telegram-navigator
 make setup    # creates .venv, installs deps, copies .env.example
 ```

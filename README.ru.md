@@ -1,6 +1,6 @@
 # telegram-navigator
 
-**AI-бот для автоматического оглавления Telegram-каналов.**
+**AI-навигатор по Telegram-каналам — авто-индексация, классификация по темам, умный поиск и дайджесты.**
 
 Автоматически индексирует Telegram-каналы, классифицирует посты по темам с помощью Google Gemini, генерирует навигируемое оглавление и отправляет периодические дайджесты подписчикам. Поддерживает английский и русский интерфейс с автоопределением языка.
 
@@ -26,7 +26,7 @@
 ## Быстрый старт (Docker)
 
 ```bash
-git clone https://github.com/olegtestov/telegram-navigator.git
+git clone https://github.com/OlegTestov/telegram-navigator.git
 cd telegram-navigator
 cp .env.example .env
 # Заполните .env (см. Требования ниже)
@@ -36,7 +36,7 @@ docker compose up -d bot
 ## Быстрый старт (локально)
 
 ```bash
-git clone https://github.com/olegtestov/telegram-navigator.git
+git clone https://github.com/OlegTestov/telegram-navigator.git
 cd telegram-navigator
 make setup          # создаёт venv, устанавливает зависимости, копирует .env.example
 # Заполните .env
