@@ -11,7 +11,7 @@ Automatically indexes Telegram channels, classifies posts into topics using Goog
 - **Auto-indexing** — reads channel history via Telethon, stores posts in DB
 - **AI classification** — Google Gemini groups posts into topics with descriptions
 - **Table of contents** — generates compact, navigable TOC for each channel
-- **Smart search** — keyword + vector hybrid search (optional OpenAI embeddings)
+- **Smart search** — hybrid search (keywords + semantics) within a channel or across all at once. Semantic search requires OpenAI embeddings
 - **Digest subscriptions** — periodic summaries of new posts delivered to subscribers
 - **i18n** — English / Russian UI, auto-detected from Telegram language with manual override
 - **Flexible DB** — SQLite (default, zero-config) or Supabase (PostgreSQL + pgvector)
@@ -19,9 +19,9 @@ Automatically indexes Telegram channels, classifies posts into topics using Goog
 ## Use Cases
 
 - **Stay on top of multiple channels** — add all your favorite channels, get a brief digest every 3 hours with AI-generated summaries. Click through to read the original post if something catches your eye.
-- **Explore a new channel** — just added an interesting channel? The bot builds a table of contents with the most popular, useful, and recent posts organized by topic. Skim the highlights instead of scrolling through hundreds of posts.
+- **Explore a new channel** — just added an interesting channel? The bot builds a table of contents with the most popular, useful, and recent posts organized by topic — instead of scrolling through hundreds of posts.
 - **Build a knowledge base** — index a curated set of Telegram channels and get a continuously updated, searchable knowledge base on any topic — AI, crypto, dev tools, whatever you follow.
-- **Search & research** — need to find that one post about a specific tool or technique? Search across all your channels at once with hybrid keyword + semantic search.
+- **Search & research** — need to find that one post about a specific tool or technique? Search within a single channel or across all of them at once — hybrid search considers both keywords and meaning.
 
 ## Quick Start (Docker)
 
@@ -90,7 +90,7 @@ See [`.env.example`](.env.example) for all available environment variables with 
 | `GEMINI_MODEL` | No | `gemini-3-flash-preview` | Gemini model name |
 | `DB_BACKEND` | No | `sqlite` | `sqlite` or `supabase` |
 | `SQLITE_DB_PATH` | No | `data/content_table.db` | SQLite database path |
-| `OPENAI_API_KEY` | No | — | Enables hybrid vector search |
+| `OPENAI_API_KEY` | No | — | Enables hybrid search (keywords + semantics) |
 
 ## Architecture
 
