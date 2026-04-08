@@ -142,16 +142,15 @@ SQLITE_DB_PATH=data/content_table.db
 Для продакшена и облачного размещения с надёжным хранилищем.
 
 1. Создайте проект на [supabase.com](https://supabase.com)
-2. Откройте **SQL Editor** и выполните [`schema.sql`](schema.sql)
-3. Укажите переменные окружения:
+2. Включите расширение `vector`: **Dashboard → Database → Extensions → найдите "vector" → Enable**
+3. Откройте **SQL Editor** и выполните целиком [`schema.sql`](schema.sql) — он создаст все таблицы, индексы, расширение pgvector и RPC-функции для гибридного поиска
+4. Укажите переменные окружения:
 
 ```env
 DB_BACKEND=supabase
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-service-role-key
 ```
-
-Для гибридного поиска включите расширение `vector` в настройках проекта (Dashboard → Database → Extensions).
 
 ## Участие в разработке
 

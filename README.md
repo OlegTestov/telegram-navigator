@@ -142,16 +142,15 @@ For hybrid (vector + keyword) search, install the optional `sqlite-vec` extensio
 For cloud/production deployments with persistent storage.
 
 1. Create a project at [supabase.com](https://supabase.com)
-2. Go to **SQL Editor** and run the contents of [`schema.sql`](schema.sql)
-3. Set environment variables:
+2. Enable the `vector` extension: **Dashboard → Database → Extensions → search "vector" → Enable**
+3. Go to **SQL Editor** and run the entire [`schema.sql`](schema.sql) — it creates all tables, indexes, the pgvector extension, and RPC functions for hybrid search
+4. Set environment variables:
 
 ```env
 DB_BACKEND=supabase
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-service-role-key
 ```
-
-Supabase uses pgvector for hybrid search — enable the `vector` extension in your project settings (Dashboard → Database → Extensions).
 
 ## Contributing
 
