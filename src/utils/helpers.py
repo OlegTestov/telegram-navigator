@@ -57,7 +57,7 @@ def slugify(text: str) -> str:
 
 def content_hash(text: str) -> str:
     """MD5 hash of text for change detection."""
-    return hashlib.md5(text.encode("utf-8")).hexdigest()
+    return hashlib.md5(text.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
 def parse_channel_url(url: str) -> str | None:
