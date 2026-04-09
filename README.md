@@ -13,7 +13,8 @@ Automatically indexes Telegram channels, classifies posts into topics using Goog
 - **Table of contents** — generates compact, navigable TOC for each channel
 - **Smart search** — hybrid search (keywords + semantics) within a channel or across all at once. Semantic search requires OpenAI embeddings
 - **Digest subscriptions** — periodic summaries of new posts delivered to subscribers
-- **i18n** — English / Russian UI, auto-detected from Telegram language with manual override. LLM-generated content (topics, TOC, digests) is automatically translated. Extensible to new languages without schema changes
+- **Admin settings** — configure content language, translation targets, and digest interval directly from the bot UI
+- **i18n** — English / Russian UI, auto-detected from Telegram language with manual override. LLM-generated content (topics, TOC, digests) is automatically translated to a configurable secondary language. Extensible to new languages without schema changes
 - **Flexible DB** — SQLite (default, zero-config) or Supabase (PostgreSQL + pgvector)
 
 ## Use Cases
@@ -91,6 +92,9 @@ See [`.env.example`](.env.example) for all available environment variables with 
 | `DB_BACKEND` | No | `sqlite` | `sqlite` or `supabase` |
 | `SQLITE_DB_PATH` | No | `data/content_table.db` | SQLite database path |
 | `OPENAI_API_KEY` | No | — | Enables hybrid search (keywords + semantics) |
+| `CONTENT_LANGUAGE` | No | `en` | Language for LLM-generated content (topics, TOC, digests). Can also be changed in admin settings |
+| `TRANSLATION_LANGUAGES` | No | `ru` | Auto-translate content to these languages (comma-separated, empty = disabled) |
+| `DIGEST_INTERVAL_HOURS` | No | `3` | Hours between digest deliveries (1, 3, 6, 12, or 24) |
 
 ## Architecture
 
@@ -98,7 +102,7 @@ See [`.env.example`](.env.example) for all available environment variables with 
 telegram-navigator/
 ├── src/
 │   ├── main.py              # Bot entry point (long-running polling)
-│   ├── scheduler_main.py    # Hourly cron: fetch → classify → score → TOC → digest
+│   ├── scheduler_main.py    # Hourly cron: index → digest → translate (4-phase pipeline)
 │   ├── bot/                  # Handlers, callbacks, keyboards, messages (i18n)
 │   ├── config/               # Settings, constants, LLM prompts
 │   ├── database/             # DB factory, models, SQLite & Supabase queries
@@ -112,7 +116,11 @@ telegram-navigator/
 
 **Two processes:**
 1. **Bot** (`src.main`) — Telegram polling, handles user commands and callbacks
-2. **Scheduler** (`src.scheduler_main`) — hourly pipeline: fetch new posts → classify → score → update TOC → send digests
+2. **Scheduler** (`src.scheduler_main`) — hourly pipeline with 4 phases:
+   1. **Index** — fetch new posts → classify → score → generate TOC (in primary content language)
+   2. **Digest** — generate per-channel summaries, translate inline, deliver to subscribers
+   3. **Translate priority** — translate topic names, summaries, and TOC to secondary language
+   4. **Translate descriptions** — batch-translate post descriptions (low priority, background)
 
 ## Deployment
 
