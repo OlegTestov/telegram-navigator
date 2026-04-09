@@ -1,7 +1,35 @@
-"""Per-user language detection and caching."""
+"""Per-user language detection, caching, and translation helpers."""
 
 from telegram import Update
 from telegram.ext import ContextTypes
+
+
+def apply_translations(entities, translations: dict, fields: list[str]):
+    """Apply translations dict to entity list in-place.
+
+    Args:
+        entities: List of dataclass instances with .id attribute.
+        translations: {entity_id: {"field": "value", ...}} from get_*_translations().
+        fields: List of field names to override (e.g., ["name", "summary"]).
+
+    Returns the same entities list (modified in-place).
+    """
+    for entity in entities:
+        tr = translations.get(entity.id)
+        if tr:
+            for field in fields:
+                val = tr.get(field) if isinstance(tr, dict) else tr
+                if val:
+                    setattr(entity, field, val)
+    return entities
+
+
+def apply_post_translations(posts, translations: dict):
+    """Apply post description translations. translations: {post_id: description}."""
+    for post in posts:
+        if post.id in translations:
+            post.description = translations[post.id]
+    return posts
 
 
 def get_user_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:

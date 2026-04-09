@@ -104,6 +104,40 @@ CREATE TABLE IF NOT EXISTS ct_user_preferences (
     language TEXT NOT NULL DEFAULT 'ru',
     created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS ct_bot_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ct_post_translations (
+    post_id INTEGER NOT NULL REFERENCES ct_posts(id) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    description TEXT,
+    PRIMARY KEY (post_id, lang)
+);
+
+CREATE TABLE IF NOT EXISTS ct_topic_translations (
+    topic_id INTEGER NOT NULL REFERENCES ct_topics(id) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    name TEXT NOT NULL,
+    summary TEXT,
+    PRIMARY KEY (topic_id, lang)
+);
+
+CREATE TABLE IF NOT EXISTS ct_channel_toc_translations (
+    channel_id INTEGER NOT NULL REFERENCES ct_channels(id) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    cached_toc TEXT NOT NULL,
+    PRIMARY KEY (channel_id, lang)
+);
+
+CREATE TABLE IF NOT EXISTS ct_digest_translations (
+    digest_id INTEGER NOT NULL REFERENCES ct_channel_digests(id) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    content TEXT NOT NULL,
+    PRIMARY KEY (digest_id, lang)
+);
 """
 
 
@@ -704,6 +738,97 @@ class SQLiteQueries:
             (user_id, language),
         )
         self.conn.commit()
+
+    # --- Bot Settings ---
+
+    def get_bot_setting(self, key: str) -> Optional[str]:
+        row = self.conn.execute("SELECT value FROM ct_bot_settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def set_bot_setting(self, key: str, value: str):
+        self.conn.execute(
+            "INSERT INTO ct_bot_settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        self.conn.commit()
+
+    def get_all_bot_settings(self) -> dict[str, str]:
+        rows = self.conn.execute("SELECT key, value FROM ct_bot_settings").fetchall()
+        return {row["key"]: row["value"] for row in rows}
+
+    # --- Translations ---
+
+    def save_post_translations(self, translations: list[tuple[int, str, str]]):
+        """Batch upsert: [(post_id, lang, description), ...]"""
+        if not translations:
+            return
+        self.conn.executemany(
+            "INSERT INTO ct_post_translations (post_id, lang, description) VALUES (?, ?, ?) "
+            "ON CONFLICT(post_id, lang) DO UPDATE SET description = excluded.description",
+            translations,
+        )
+        self.conn.commit()
+
+    def save_topic_translation(self, topic_id: int, lang: str, name: str, summary: str = None):
+        self.conn.execute(
+            "INSERT INTO ct_topic_translations (topic_id, lang, name, summary) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(topic_id, lang) DO UPDATE SET name = excluded.name, summary = excluded.summary",
+            (topic_id, lang, name, summary),
+        )
+        self.conn.commit()
+
+    def save_toc_translation(self, channel_id: int, lang: str, cached_toc: str):
+        self.conn.execute(
+            "INSERT INTO ct_channel_toc_translations (channel_id, lang, cached_toc) VALUES (?, ?, ?) "
+            "ON CONFLICT(channel_id, lang) DO UPDATE SET cached_toc = excluded.cached_toc",
+            (channel_id, lang, cached_toc),
+        )
+        self.conn.commit()
+
+    def save_digest_translation(self, digest_id: int, lang: str, content: str):
+        self.conn.execute(
+            "INSERT INTO ct_digest_translations (digest_id, lang, content) VALUES (?, ?, ?) "
+            "ON CONFLICT(digest_id, lang) DO UPDATE SET content = excluded.content",
+            (digest_id, lang, content),
+        )
+        self.conn.commit()
+
+    def get_post_translations(self, post_ids: list[int], lang: str) -> dict[int, str]:
+        """Returns {post_id: description} for given lang."""
+        if not post_ids:
+            return {}
+        placeholders = ",".join("?" * len(post_ids))
+        rows = self.conn.execute(
+            f"SELECT post_id, description FROM ct_post_translations WHERE post_id IN ({placeholders}) AND lang = ?",
+            post_ids + [lang],
+        ).fetchall()
+        return {row["post_id"]: row["description"] for row in rows if row["description"]}
+
+    def get_topic_translations(self, topic_ids: list[int], lang: str) -> dict[int, dict]:
+        """Returns {topic_id: {"name": ..., "summary": ...}} for given lang."""
+        if not topic_ids:
+            return {}
+        placeholders = ",".join("?" * len(topic_ids))
+        rows = self.conn.execute(
+            f"SELECT topic_id, name, summary FROM ct_topic_translations WHERE topic_id IN ({placeholders}) AND lang = ?",
+            topic_ids + [lang],
+        ).fetchall()
+        return {row["topic_id"]: {"name": row["name"], "summary": row["summary"]} for row in rows}
+
+    def get_toc_translation(self, channel_id: int, lang: str) -> Optional[str]:
+        row = self.conn.execute(
+            "SELECT cached_toc FROM ct_channel_toc_translations WHERE channel_id = ? AND lang = ?",
+            (channel_id, lang),
+        ).fetchone()
+        return row["cached_toc"] if row else None
+
+    def get_digest_translation(self, digest_id: int, lang: str) -> Optional[str]:
+        row = self.conn.execute(
+            "SELECT content FROM ct_digest_translations WHERE digest_id = ? AND lang = ?",
+            (digest_id, lang),
+        ).fetchone()
+        return row["content"] if row else None
 
     # --- Stats ---
 

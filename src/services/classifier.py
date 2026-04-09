@@ -7,9 +7,8 @@ import logging
 from google import genai
 
 from src.config.constants import MAX_POST_TEXT_FOR_LLM
-from src.config.prompts import CLASSIFICATION_PROMPT, TOPIC_SUMMARY_PROMPT
+from src.config.prompts import CLASSIFICATION_PROMPT, TOPIC_SUMMARY_PROMPT, get_language_config
 from src.config.settings import BATCH_SIZE, GEMINI_API_KEY, GEMINI_MODEL
-from src.utils.errors import ClassificationError
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +25,14 @@ def _get_client():
 async def classify_posts(
     posts: list[dict],
     existing_topics: list[str],
+    content_language: str = "en",
 ) -> list[dict]:
     """Classify a list of posts into topics.
 
     Args:
         posts: List of dicts with 'text' and post index.
         existing_topics: List of existing topic names for the channel.
+        content_language: Language for topic names and descriptions.
 
     Returns:
         List of dicts with 'post_index', 'topics', 'description', 'usefulness'.
@@ -43,7 +44,7 @@ async def classify_posts(
 
     for i in range(0, len(posts), BATCH_SIZE):
         batch = posts[i : i + BATCH_SIZE]
-        batch_results = await _classify_batch(batch, existing_topics)
+        batch_results = await _classify_batch(batch, existing_topics, content_language)
         all_results.extend(batch_results)
 
     return all_results
@@ -52,17 +53,22 @@ async def classify_posts(
 async def _classify_batch(
     posts: list[dict],
     existing_topics: list[str],
+    content_language: str = "en",
 ) -> list[dict]:
     """Classify a single batch of posts."""
+    lang_config = get_language_config(content_language)
+
     posts_text = []
     for idx, post in enumerate(posts):
         text = post["text"][:MAX_POST_TEXT_FOR_LLM]
         post_id = post.get("post_id", idx)
         posts_text.append(f"[Post {idx}, id={post_id}]\n{text}")
 
-    topics_str = ", ".join(existing_topics) if existing_topics else "(пока нет тем)"
+    topics_str = ", ".join(existing_topics) if existing_topics else "(no topics yet)"
 
     prompt = CLASSIFICATION_PROMPT.format(
+        language=lang_config["name"],
+        fallback_topic=lang_config["fallback_topic"],
         existing_topics=topics_str,
         posts="\n\n".join(posts_text),
     )
@@ -77,16 +83,16 @@ async def _classify_batch(
             ),
             timeout=60,
         )
-        return _parse_classification_response(response.text, len(posts))
+        return _parse_classification_response(response.text, len(posts), lang_config["fallback_topic"])
     except asyncio.TimeoutError:
         logger.error("Gemini classification timeout for batch of %d posts", len(posts))
     except Exception as e:
         logger.error("Gemini classification error: %s", e)
-    # Fallback: return "Прочее" for all posts
+    # Fallback
     return [
         {
             "post_index": idx,
-            "topics": ["Прочее"],
+            "topics": [lang_config["fallback_topic"]],
             "description": post["text"][:50],
             "usefulness": 5,
         }
@@ -94,18 +100,21 @@ async def _classify_batch(
     ]
 
 
-def _parse_classification_response(text: str, expected_count: int) -> list[dict]:
+def _parse_classification_response(text: str, expected_count: int, fallback_topic: str = "Other") -> list[dict]:
     """Parse JSON response from Gemini."""
-    # Find JSON array in response
     text = text.strip()
     start = text.find("[")
     end = text.rfind("]")
     if start == -1 or end == -1:
+        from src.utils.errors import ClassificationError
+
         raise ClassificationError(f"No JSON array in response: {text[:200]}")
 
     try:
         data = json.loads(text[start : end + 1])
     except json.JSONDecodeError as e:
+        from src.utils.errors import ClassificationError
+
         raise ClassificationError(f"Invalid JSON: {e}") from e
 
     results = []
@@ -113,7 +122,7 @@ def _parse_classification_response(text: str, expected_count: int) -> list[dict]
         results.append(
             {
                 "post_index": item.get("post_index", len(results)),
-                "topics": item.get("topics", ["Прочее"]),
+                "topics": item.get("topics", [fallback_topic]),
                 "description": item.get("description", "")[:50],
                 "usefulness": min(10, max(1, item.get("usefulness", 5))),
             }
@@ -125,13 +134,16 @@ def _parse_classification_response(text: str, expected_count: int) -> list[dict]
 async def generate_topic_summary(
     topic_name: str,
     post_descriptions: list[str],
+    content_language: str = "en",
 ) -> str:
     """Generate a 2-3 sentence summary for a topic."""
     if not post_descriptions:
         return ""
 
+    lang_config = get_language_config(content_language)
     descriptions_text = "\n".join(f"- {d}" for d in post_descriptions[:30])
     prompt = TOPIC_SUMMARY_PROMPT.format(
+        language=lang_config["name"],
         topic_name=topic_name,
         post_descriptions=descriptions_text,
     )

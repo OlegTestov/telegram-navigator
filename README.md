@@ -13,7 +13,7 @@ Automatically indexes Telegram channels, classifies posts into topics using Goog
 - **Table of contents** — generates compact, navigable TOC for each channel
 - **Smart search** — hybrid search (keywords + semantics) within a channel or across all at once. Semantic search requires OpenAI embeddings
 - **Digest subscriptions** — periodic summaries of new posts delivered to subscribers
-- **i18n** — English / Russian UI, auto-detected from Telegram language with manual override
+- **i18n** — English / Russian UI, auto-detected from Telegram language with manual override. LLM-generated content (topics, TOC, digests) is automatically translated. Extensible to new languages without schema changes
 - **Flexible DB** — SQLite (default, zero-config) or Supabase (PostgreSQL + pgvector)
 
 ## Use Cases
@@ -102,7 +102,7 @@ telegram-navigator/
 │   ├── bot/                  # Handlers, callbacks, keyboards, messages (i18n)
 │   ├── config/               # Settings, constants, LLM prompts
 │   ├── database/             # DB factory, models, SQLite & Supabase queries
-│   ├── services/             # Fetcher, classifier, scorer, TOC generator, digest, embedder
+│   ├── services/             # Fetcher, classifier, scorer, TOC generator, digest, embedder, translator
 │   └── utils/                # Helpers, i18n, error types
 ├── Dockerfile
 ├── docker-compose.yml
@@ -161,7 +161,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR
 - [ ] LLM abstraction layer (Claude, Ollama, OpenRouter)
 - [ ] Multi-admin RBAC
 - [ ] Test suite
-- [ ] More languages
+- [ ] More languages (see [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-new-language-example-spanish) for how to add one)
 - [ ] Per-channel language for TOC and LLM prompts
 
 ## License

@@ -46,6 +46,32 @@ ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "0"))
 # Pipeline
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
 
+# Content language defaults (can be overridden via bot admin settings in DB)
+CONTENT_LANGUAGE = os.getenv("CONTENT_LANGUAGE", "en")
+TRANSLATION_LANGUAGES = os.getenv("TRANSLATION_LANGUAGES", "ru")
+DIGEST_INTERVAL_HOURS_DEFAULT = os.getenv("DIGEST_INTERVAL_HOURS", "3")
+
+# Settings defaults for first run (before admin configures via bot)
+_SETTING_DEFAULTS = {
+    "content_language": CONTENT_LANGUAGE,
+    "translation_languages": TRANSLATION_LANGUAGES,
+    "digest_interval_hours": DIGEST_INTERVAL_HOURS_DEFAULT,
+}
+
+
+def get_setting(queries, key: str) -> str:
+    """Read setting: DB → .env → hardcoded default."""
+    val = queries.get_bot_setting(key)
+    if val is not None:
+        return val
+    return _SETTING_DEFAULTS.get(key, "")
+
+
+def get_translation_languages(queries) -> list[str]:
+    """Parse translation_languages setting into a list."""
+    raw = get_setting(queries, "translation_languages")
+    return [lang.strip() for lang in raw.split(",") if lang.strip()]
+
 
 def validate_config() -> bool:
     required = {

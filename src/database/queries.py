@@ -795,6 +795,134 @@ class DatabaseQueries:
             )
         )
 
+    # --- Bot Settings ---
+
+    def get_bot_setting(self, key: str) -> str | None:
+        result = self.db.execute(
+            lambda: self.db.client.table("ct_bot_settings").select("value").eq("key", key).limit(1).execute()
+        )
+        return result.data[0]["value"] if result.data else None
+
+    def set_bot_setting(self, key: str, value: str):
+        self.db.execute(
+            lambda: (
+                self.db.client.table("ct_bot_settings")
+                .upsert({"key": key, "value": value}, on_conflict="key")
+                .execute()
+            )
+        )
+
+    def get_all_bot_settings(self) -> dict[str, str]:
+        result = self.db.execute(lambda: self.db.client.table("ct_bot_settings").select("key, value").execute())
+        return {row["key"]: row["value"] for row in result.data}
+
+    # --- Translations ---
+
+    def save_post_translations(self, translations: list[tuple[int, str, str]]):
+        """Batch upsert: [(post_id, lang, description), ...]"""
+        if not translations:
+            return
+        rows = [{"post_id": pid, "lang": lang, "description": desc} for pid, lang, desc in translations]
+        for i in range(0, len(rows), 500):
+            batch = rows[i : i + 500]
+            self.db.execute(
+                lambda b=batch: (
+                    self.db.client.table("ct_post_translations").upsert(b, on_conflict="post_id,lang").execute()
+                )
+            )
+
+    def save_topic_translation(self, topic_id: int, lang: str, name: str, summary: str = None):
+        self.db.execute(
+            lambda: (
+                self.db.client.table("ct_topic_translations")
+                .upsert(
+                    {"topic_id": topic_id, "lang": lang, "name": name, "summary": summary},
+                    on_conflict="topic_id,lang",
+                )
+                .execute()
+            )
+        )
+
+    def save_toc_translation(self, channel_id: int, lang: str, cached_toc: str):
+        self.db.execute(
+            lambda: (
+                self.db.client.table("ct_channel_toc_translations")
+                .upsert(
+                    {"channel_id": channel_id, "lang": lang, "cached_toc": cached_toc},
+                    on_conflict="channel_id,lang",
+                )
+                .execute()
+            )
+        )
+
+    def save_digest_translation(self, digest_id: int, lang: str, content: str):
+        self.db.execute(
+            lambda: (
+                self.db.client.table("ct_digest_translations")
+                .upsert(
+                    {"digest_id": digest_id, "lang": lang, "content": content},
+                    on_conflict="digest_id,lang",
+                )
+                .execute()
+            )
+        )
+
+    def get_post_translations(self, post_ids: list[int], lang: str) -> dict[int, str]:
+        """Returns {post_id: description} for given lang."""
+        if not post_ids:
+            return {}
+        result = self.db.execute(
+            lambda: (
+                self.db.client.table("ct_post_translations")
+                .select("post_id, description")
+                .in_("post_id", post_ids)
+                .eq("lang", lang)
+                .execute()
+            )
+        )
+        return {row["post_id"]: row["description"] for row in result.data if row.get("description")}
+
+    def get_topic_translations(self, topic_ids: list[int], lang: str) -> dict[int, dict]:
+        """Returns {topic_id: {"name": ..., "summary": ...}} for given lang."""
+        if not topic_ids:
+            return {}
+        result = self.db.execute(
+            lambda: (
+                self.db.client.table("ct_topic_translations")
+                .select("topic_id, name, summary")
+                .in_("topic_id", topic_ids)
+                .eq("lang", lang)
+                .execute()
+            )
+        )
+        return {row["topic_id"]: {"name": row["name"], "summary": row["summary"]} for row in result.data}
+
+    def get_toc_translation(self, channel_id: int, lang: str) -> str | None:
+        result = self.db.execute(
+            lambda: (
+                self.db.client.table("ct_channel_toc_translations")
+                .select("cached_toc")
+                .eq("channel_id", channel_id)
+                .eq("lang", lang)
+                .limit(1)
+                .execute()
+            )
+        )
+        return result.data[0]["cached_toc"] if result.data else None
+
+    def get_digest_translation(self, digest_id: int, lang: str) -> str | None:
+        result = self.db.execute(
+            lambda: (
+                self.db.client.table("ct_digest_translations")
+                .select("content")
+                .eq("digest_id", digest_id)
+                .eq("lang", lang)
+                .limit(1)
+                .execute()
+            )
+        )
+        return result.data[0]["content"] if result.data else None
+
     # --- Stats ---
 
     def get_stats(self) -> dict:

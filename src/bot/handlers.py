@@ -8,9 +8,9 @@ from telegram.ext import ContextTypes
 
 from src.bot.keyboards import channels_keyboard, search_results_keyboard, start_keyboard
 from src.bot.messages import get_messages
-from src.config.settings import ADMIN_TELEGRAM_ID, EMBEDDINGS_ENABLED
+from src.config.settings import ADMIN_TELEGRAM_ID, EMBEDDINGS_ENABLED, get_setting
 from src.utils.helpers import parse_channel_url, parse_post_url
-from src.utils.i18n import get_user_lang
+from src.utils.i18n import apply_post_translations, get_user_lang
 
 if EMBEDDINGS_ENABLED:
     from src.services.embedder import get_query_embedding
@@ -107,6 +107,7 @@ async def _do_global_search(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     channels = queries.get_active_channels()
     query_emb = await _get_query_embedding(query)
 
+    content_lang = get_setting(queries, "content_language")
     results_lines = []
     for ch in channels:
         if hasattr(queries, "hybrid_search"):
@@ -114,6 +115,9 @@ async def _do_global_search(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         else:
             posts = queries.search_posts(ch.id, query, limit=7)
         if posts:
+            if lang != content_lang:
+                post_tr = queries.get_post_translations([p.id for p in posts], lang)
+                apply_post_translations(posts, post_tr)
             results_lines.extend(_format_search_results(posts, ch.username))
 
     if not results_lines:
@@ -162,6 +166,11 @@ async def _do_channel_search(
             reply_markup=search_results_keyboard(channel_id, lang=lang),
         )
         return
+
+    content_lang = get_setting(queries, "content_language")
+    if lang != content_lang:
+        post_tr = queries.get_post_translations([p.id for p in posts], lang)
+        apply_post_translations(posts, post_tr)
 
     channel = queries.get_channel_by_id(channel_id)
     lines = _format_search_results(posts, channel.username)

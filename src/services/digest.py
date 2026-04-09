@@ -9,7 +9,6 @@ from datetime import datetime, timedelta, timezone
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.bot.messages import get_messages
-from src.bot.messages import ru as msg_ru
 from src.config.constants import (
     DIGEST_INTERVAL_HOURS,
     DIGEST_MAX_POST_TEXT,
@@ -21,6 +20,17 @@ from src.config.settings import GEMINI_MODEL
 logger = logging.getLogger(__name__)
 
 
+def _get_digest_interval(queries) -> int:
+    """Get digest interval from DB settings, falling back to constant."""
+    from src.config.settings import get_setting
+
+    raw = get_setting(queries, "digest_interval_hours")
+    try:
+        return max(1, int(raw))
+    except (ValueError, TypeError):
+        return DIGEST_INTERVAL_HOURS
+
+
 def should_run_digest(queries) -> bool:
     """Check if enough time passed since last digest (DB-based, not clock-based)."""
     latest = queries.get_latest_digest_period_end()
@@ -30,13 +40,16 @@ def should_run_digest(queries) -> bool:
     if latest_dt.tzinfo is None:
         latest_dt = latest_dt.replace(tzinfo=timezone.utc)
     elapsed = datetime.now(timezone.utc) - latest_dt
-    return elapsed >= timedelta(hours=DIGEST_INTERVAL_HOURS)
+    interval = _get_digest_interval(queries)
+    return elapsed >= timedelta(hours=interval)
 
 
-async def summarize_posts_for_digest(posts: list) -> list[str]:
+async def summarize_posts_for_digest(posts: list, content_language: str = "en") -> list[str]:
     """Summarize posts via Gemini in one batch call. Returns list of summary strings."""
+    from src.config.prompts import get_language_name
     from src.services.classifier import _get_client
 
+    lang_name = get_language_name(content_language)
     posts_text = []
     for i, post in enumerate(posts, 1):
         text = (post.text or "")[:DIGEST_MAX_POST_TEXT]
@@ -45,7 +58,7 @@ async def summarize_posts_for_digest(posts: list) -> list[str]:
     prompt = (
         f"Summarize each of the following Telegram channel posts in 1-2 sentences, "
         f"extracting the most important and key information. "
-        f"Respond in Russian.\n"
+        f"Respond in {lang_name}.\n"
         f"Return exactly {len(posts)} summaries as a numbered list (1. ... 2. ... etc).\n\n" + "\n\n".join(posts_text)
     )
 
@@ -83,22 +96,31 @@ def _parse_numbered_list(text: str, expected_count: int) -> list[str]:
     return lines
 
 
-async def generate_channel_digest_content(channel, posts, total_count: int = None) -> str:
-    """Format a single channel's digest block as HTML with Gemini summaries."""
+def _build_digest_html(channel, posts, summaries, total_count=None, lang="ru") -> str:
+    """Build a single channel's digest block as HTML."""
+    msg = get_messages(lang)
     total = total_count if total_count is not None else len(posts)
-    capped = posts[:DIGEST_MAX_POSTS_PER_CHANNEL]
-
-    summaries = await summarize_posts_for_digest(capped)
-
     title = html.escape(channel.title or channel.username)
     lines = [f"<b>{title}:</b>"]
-    for summary, post in zip(summaries, capped):
+    for summary, post in zip(summaries, posts):
         safe_summary = html.escape(summary)
         lines.append(f'  • {safe_summary} (<a href="{post.post_url}">link</a>)')
     if total > DIGEST_MAX_POSTS_PER_CHANNEL:
-        lines.append(msg_ru.DIGEST_MORE_POSTS.format(count=total - DIGEST_MAX_POSTS_PER_CHANNEL))
-
+        lines.append(msg.DIGEST_MORE_POSTS.format(count=total - DIGEST_MAX_POSTS_PER_CHANNEL))
     return "\n".join(lines)
+
+
+async def generate_channel_digest_content(
+    channel, posts, total_count: int = None, content_language: str = "en"
+) -> tuple[str, list[str]]:
+    """Format a single channel's digest block as HTML with Gemini summaries.
+
+    Returns (content, summaries) so translations can reuse summaries.
+    """
+    capped = posts[:DIGEST_MAX_POSTS_PER_CHANNEL]
+    summaries = await summarize_posts_for_digest(capped, content_language)
+    content = _build_digest_html(channel, capped, summaries, total_count, lang=content_language)
+    return content, summaries
 
 
 def assemble_user_digest(
@@ -109,7 +131,9 @@ def assemble_user_digest(
 ) -> list[str]:
     """Assemble per-user digest message(s), splitting at ~4000 chars."""
     if msg is None:
-        msg = msg_ru
+        from src.bot.messages import ru as _msg_ru
+
+        msg = _msg_ru
     fmt = "%H:%M"
     date_fmt = "%d.%m.%Y"
     period_str = f"{period_start.strftime(fmt)} — {period_end.strftime(fmt)}, {period_end.strftime(date_fmt)}"
@@ -157,13 +181,15 @@ def _split_message(text: str, max_length: int = 4000) -> list[str]:
     return chunks
 
 
-async def run_digest_cycle(queries, bot: Bot):
+async def run_digest_cycle(queries, bot: Bot, content_language: str = "en", trans_langs: list[str] | None = None):
     """Generate per-channel digests and deliver to subscribers."""
+    from src.services.translator import translate_texts
+
     now = datetime.now(timezone.utc)
-    # Align to nearest past boundary (0, 6, 12, 18 UTC)
-    aligned_hour = (now.hour // DIGEST_INTERVAL_HOURS) * DIGEST_INTERVAL_HOURS
+    interval = _get_digest_interval(queries)
+    aligned_hour = (now.hour // interval) * interval
     period_end = now.replace(hour=aligned_hour, minute=0, second=0, microsecond=0)
-    period_start = period_end - timedelta(hours=DIGEST_INTERVAL_HOURS)
+    period_start = period_end - timedelta(hours=interval)
 
     period_start_iso = period_start.isoformat()
     period_end_iso = period_end.isoformat()
@@ -190,7 +216,7 @@ async def run_digest_cycle(queries, bot: Bot):
             period_end_iso,
             limit=DIGEST_MAX_POSTS_PER_CHANNEL,
         )
-        content = await generate_channel_digest_content(channel, posts, total_count)
+        content, summaries = await generate_channel_digest_content(channel, posts, total_count, content_language)
         digest_id = queries.save_channel_digest(
             channel.id,
             period_start_iso,
@@ -198,6 +224,18 @@ async def run_digest_cycle(queries, bot: Bot):
             content,
             total_count,
         )
+
+        # Translate digest for each translation language
+        if trans_langs:
+            capped = posts[:DIGEST_MAX_POSTS_PER_CHANNEL]
+            for tlang in trans_langs:
+                try:
+                    summaries_tr = await translate_texts(summaries, target_lang=tlang)
+                    content_tr = _build_digest_html(channel, capped, summaries_tr, total_count, lang=tlang)
+                    queries.save_digest_translation(digest_id, tlang, content_tr)
+                except Exception as e:
+                    logger.error("Failed to translate digest for @%s to %s: %s", channel.username, tlang, e)
+
         generated_digests.append(
             {
                 "id": digest_id,
@@ -225,12 +263,21 @@ async def run_digest_cycle(queries, bot: Bot):
     digest_by_channel = {d["channel_id"]: d for d in generated_digests}
 
     for user_id, channel_ids in subscribers.items():
+        user_lang = queries.get_user_language(user_id) or "ru"
+        user_msg = get_messages(user_lang)
+
         # Collect digests for this user's channels
         user_digests = []
         for cid in channel_ids:
             if cid in digest_by_channel:
                 d = digest_by_channel[cid]
-                user_digests.append((d, d["content"]))
+                # Serve translated content if available
+                if user_lang != content_language:
+                    translated = queries.get_digest_translation(d["id"], user_lang)
+                    content = translated or d["content"]
+                else:
+                    content = d["content"]
+                user_digests.append((d, content))
 
         if not user_digests:
             continue
@@ -244,8 +291,6 @@ async def run_digest_cycle(queries, bot: Bot):
         undelivered_set = set(undelivered_ids)
         user_digests = [(d, c) for d, c in user_digests if d["id"] in undelivered_set]
 
-        user_lang = queries.get_user_language(user_id) or "ru"
-        user_msg = get_messages(user_lang)
         messages = assemble_user_digest(user_digests, period_start, period_end, msg=user_msg)
 
         menu_kb = InlineKeyboardMarkup([[InlineKeyboardButton(user_msg.KB_OPEN_MENU, callback_data="open_menu")]])

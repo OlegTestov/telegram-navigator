@@ -17,10 +17,10 @@ from src.bot.keyboards import (
 )
 from src.bot.messages import get_messages
 from src.config.constants import POSTS_PER_PAGE
-from src.config.settings import ADMIN_TELEGRAM_ID
-from src.services.toc_generator import generate_compact_toc
+from src.config.settings import ADMIN_TELEGRAM_ID, get_setting, get_translation_languages
+from src.services.toc_generator import generate_compact_toc, generate_translated_toc
 from src.utils.helpers import truncate
-from src.utils.i18n import get_user_lang
+from src.utils.i18n import apply_post_translations, apply_translations, get_user_lang
 
 logger = logging.getLogger(__name__)
 
@@ -50,39 +50,143 @@ async def _route_callback(query, data, update, context):
     is_admin = update.effective_user.id == ADMIN_TELEGRAM_ID
     lang = get_user_lang(update, context)
     msg = get_messages(lang)
+    content_lang = get_setting(queries, "content_language")
 
     if data == "noop":
         return
 
-    # --- Language selection ---
+    # --- Settings ---
 
-    if data == "set_lang":
+    if data == "bot_settings":
+        content_lang_code = content_lang
+        trans_lang_code = get_setting(queries, "translation_languages")
+        digest_interval = get_setting(queries, "digest_interval_hours") or "3"
+
+        cl_name = msg.LANG_NAME_RU if content_lang_code == "ru" else msg.LANG_NAME_EN
+        tl_name = (
+            msg.SETTINGS_DISABLED
+            if not trans_lang_code
+            else (msg.LANG_NAME_RU if trans_lang_code == "ru" else msg.LANG_NAME_EN)
+        )
+        ui_name = msg.LANG_NAME_RU if lang == "ru" else msg.LANG_NAME_EN
+
+        text = msg.SETTINGS_TITLE.format(ui_lang=ui_name)
+        if is_admin:
+            hours_map_ru = {"1": "1 час", "3": "3 часа", "6": "6 часов", "12": "12 часов", "24": "24 часа"}
+            hours_map_en = {"1": "1 hour", "3": "3 hours", "6": "6 hours", "12": "12 hours", "24": "24 hours"}
+            hours_map = hours_map_ru if lang == "ru" else hours_map_en
+            digest_label = hours_map.get(digest_interval, f"{digest_interval}h")
+            text += msg.SETTINGS_ADMIN_SECTION.format(
+                content_lang=cl_name,
+                trans_lang=tl_name,
+                digest_interval=digest_label,
+            )
+
+        buttons = [
+            [InlineKeyboardButton(msg.KB_UI_LANG, callback_data="settings_ui_lang")],
+        ]
+        if is_admin:
+            buttons.append([InlineKeyboardButton(msg.KB_CONTENT_LANG, callback_data="settings_content_lang")])
+            buttons.append([InlineKeyboardButton(msg.KB_TRANS_LANG, callback_data="settings_trans_lang")])
+            buttons.append([InlineKeyboardButton(msg.KB_DIGEST_INTERVAL, callback_data="settings_digest")])
+        buttons.append([InlineKeyboardButton(msg.KB_BACK, callback_data="start")])
+
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+        return
+
+    if data == "settings_ui_lang":
         kb = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton("\U0001f1f7\U0001f1fa Русский", callback_data="lang:ru"),
-                    InlineKeyboardButton("\U0001f1ec\U0001f1e7 English", callback_data="lang:en"),
+                    InlineKeyboardButton("\U0001f1f7\U0001f1fa Русский", callback_data="set_ui_lang:ru"),
+                    InlineKeyboardButton("\U0001f1ec\U0001f1e7 English", callback_data="set_ui_lang:en"),
                 ],
-                [InlineKeyboardButton(msg.KB_BACK, callback_data="start")],
+                [InlineKeyboardButton(msg.KB_BACK, callback_data="bot_settings")],
             ]
         )
-        await query.edit_message_text(msg.CHOOSE_LANGUAGE, reply_markup=kb)
+        await query.edit_message_text(msg.SETTINGS_CHOOSE_UI_LANG, reply_markup=kb)
         return
 
-    if data.startswith("lang:"):
+    if data.startswith("set_ui_lang:"):
         new_lang = data.split(":")[1]
+        if new_lang not in ("ru", "en"):
+            return
         queries.set_user_language(update.effective_user.id, new_lang)
         context.user_data["lang"] = new_lang
-        lang = new_lang
-        msg = get_messages(new_lang)
-        has_channels = len(queries.get_active_channels()) > 0
-        welcome = msg.WELCOME_ADMIN if is_admin else msg.WELCOME_USER
-        await query.edit_message_text(
-            welcome,
-            parse_mode="HTML",
-            reply_markup=start_keyboard(has_channels, is_admin, lang=new_lang),
+        return await _route_callback(query, "bot_settings", update, context)
+
+    if data == "settings_content_lang" and is_admin:
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("\U0001f1ec\U0001f1e7 English", callback_data="set_content_lang:en"),
+                    InlineKeyboardButton("\U0001f1f7\U0001f1fa Русский", callback_data="set_content_lang:ru"),
+                ],
+                [InlineKeyboardButton(msg.KB_BACK, callback_data="bot_settings")],
+            ]
         )
+        await query.edit_message_text(msg.SETTINGS_CHOOSE_CONTENT_LANG, reply_markup=kb)
         return
+
+    if data.startswith("set_content_lang:") and is_admin:
+        new_val = data.split(":")[1]
+        if new_val not in ("ru", "en"):
+            return
+        # Clear translation language if it matches new content language
+        current_trans = get_setting(queries, "translation_languages")
+        if current_trans and current_trans == new_val:
+            queries.set_bot_setting("translation_languages", "")
+        queries.set_bot_setting("content_language", new_val)
+        return await _route_callback(query, "bot_settings", update, context)
+
+    if data == "settings_trans_lang" and is_admin:
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("\U0001f1ec\U0001f1e7 English", callback_data="set_trans_lang:en"),
+                    InlineKeyboardButton("\U0001f1f7\U0001f1fa Русский", callback_data="set_trans_lang:ru"),
+                ],
+                [InlineKeyboardButton(f"🚫 {msg.SETTINGS_DISABLED}", callback_data="set_trans_lang:")],
+                [InlineKeyboardButton(msg.KB_BACK, callback_data="bot_settings")],
+            ]
+        )
+        await query.edit_message_text(msg.SETTINGS_CHOOSE_TRANS_LANG, reply_markup=kb)
+        return
+
+    if data.startswith("set_trans_lang:") and is_admin:
+        new_val = data.split(":", 1)[1]
+        if new_val and new_val not in ("ru", "en"):
+            return
+        # Don't allow translation to the same language as content
+        current_content = get_setting(queries, "content_language")
+        if new_val and new_val == current_content:
+            new_val = ""
+        queries.set_bot_setting("translation_languages", new_val)
+        return await _route_callback(query, "bot_settings", update, context)
+
+    if data == "settings_digest" and is_admin:
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("1 час" if lang == "ru" else "1 hour", callback_data="set_digest:1"),
+                    InlineKeyboardButton("3 часа" if lang == "ru" else "3 hours", callback_data="set_digest:3"),
+                    InlineKeyboardButton("6 часов" if lang == "ru" else "6 hours", callback_data="set_digest:6"),
+                ],
+                [
+                    InlineKeyboardButton("12 часов" if lang == "ru" else "12 hours", callback_data="set_digest:12"),
+                    InlineKeyboardButton("24 часа" if lang == "ru" else "24 hours", callback_data="set_digest:24"),
+                ],
+                [InlineKeyboardButton(msg.KB_BACK, callback_data="bot_settings")],
+            ]
+        )
+        await query.edit_message_text(msg.SETTINGS_CHOOSE_DIGEST, reply_markup=kb)
+        return
+
+    if data.startswith("set_digest:") and is_admin:
+        new_val = data.split(":")[1]
+        if new_val in ("1", "3", "6", "12", "24"):
+            queries.set_bot_setting("digest_interval_hours", new_val)
+        return await _route_callback(query, "bot_settings", update, context)
 
     # --- Main menu ---
 
@@ -151,8 +255,13 @@ async def _route_callback(query, data, update, context):
         kb = channel_actions_keyboard(channel_id, is_admin, has_toc, is_subscribed, lang=lang)
 
         if channel.cached_toc:
+            # Serve translated TOC if available
+            if lang != content_lang:
+                toc = queries.get_toc_translation(channel_id, lang) or channel.cached_toc
+            else:
+                toc = channel.cached_toc
             await query.edit_message_text(
-                channel.cached_toc,
+                toc,
                 parse_mode="HTML",
                 disable_web_page_preview=True,
                 reply_markup=kb,
@@ -188,8 +297,12 @@ async def _route_callback(query, data, update, context):
         # Skip if no new posts since last TOC
         if channel.cached_toc and hasattr(queries, "has_new_posts_since_toc"):
             if not queries.has_new_posts_since_toc(channel_id):
+                if lang != content_lang:
+                    toc_fresh = queries.get_toc_translation(channel_id, lang) or channel.cached_toc
+                else:
+                    toc_fresh = channel.cached_toc
                 await query.edit_message_text(
-                    channel.cached_toc + "\n\n" + msg.CHANNEL_STATUS_TOC_FRESH,
+                    toc_fresh + "\n\n" + msg.CHANNEL_STATUS_TOC_FRESH,
                     parse_mode="HTML",
                     disable_web_page_preview=True,
                     reply_markup=kb,
@@ -197,8 +310,24 @@ async def _route_callback(query, data, update, context):
                 return
 
         await query.edit_message_text(msg.TOC_GENERATING)
-        toc = await generate_compact_toc(channel, queries)
-        queries.save_cached_toc(channel_id, toc)
+        toc_ru, groups, post_map = await generate_compact_toc(channel, queries, content_lang)
+        queries.save_cached_toc(channel_id, toc_ru)
+
+        # Generate translated TOC for configured languages
+        trans_langs = get_translation_languages(queries)
+        for tlang in trans_langs:
+            try:
+                toc_tr = await generate_translated_toc(channel, groups, post_map, queries, lang=tlang)
+                if toc_tr:
+                    queries.save_toc_translation(channel_id, tlang, toc_tr)
+            except Exception as e:
+                logger.error("Failed to translate TOC for channel %d to %s: %s", channel_id, tlang, e)
+
+        # Show the user their language version
+        if lang != content_lang:
+            toc = queries.get_toc_translation(channel_id, lang) or toc_ru
+        else:
+            toc = toc_ru
         await query.edit_message_text(
             toc,
             parse_mode="HTML",
@@ -216,6 +345,9 @@ async def _route_callback(query, data, update, context):
         if not topics:
             await query.edit_message_text(msg.NO_TOPICS)
             return
+        if lang != content_lang:
+            tr = queries.get_topic_translations([t.id for t in topics], lang)
+            apply_translations(topics, tr, ["name", "summary"])
         await query.edit_message_text(
             msg.TOPICS_HEADER,
             parse_mode="HTML",
@@ -238,8 +370,16 @@ async def _route_callback(query, data, update, context):
         posts = queries.get_posts_by_topic(topic.id, page=page, limit=POSTS_PER_PAGE)
         total = queries.get_topic_post_count(topic.id)
 
+        # Apply translations for non-Russian users
+        if lang != content_lang:
+            tr = queries.get_topic_translations([topic.id], lang)
+            apply_translations([topic], tr, ["name", "summary"])
+            post_tr = queries.get_post_translations([p.id for p in posts], lang)
+            apply_post_translations(posts, post_tr)
+
         emoji = topic.emoji or "\U0001f4cc"
-        lines = [f"{emoji} <b>{html_lib.escape(topic.name)}</b> ({total} постов)"]
+        posts_word = msg.TOPIC_POSTS_SUFFIX
+        lines = [f"{emoji} <b>{html_lib.escape(topic.name)}</b> ({total} {posts_word})"]
         if topic.summary:
             lines.append(f"<i>{html_lib.escape(topic.summary)}</i>")
         lines.append("")

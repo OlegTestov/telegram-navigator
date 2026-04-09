@@ -83,6 +83,10 @@ CHANNEL_ERROR = "❌ Channel not found."
 
 TOC_GENERATING = "⏳ Generating table of contents — this may take about a minute..."
 TOC_EMPTY = "\U0001f4da Table of contents @{username}\n\nNo indexed posts yet."
+TOC_HEADER = "\U0001f4da Table of Contents @{username}"
+TOC_UPDATED = "Updated: {date}"
+TOC_NO_POSTS = "No indexed posts yet."
+TOPIC_POSTS_SUFFIX = "posts"
 
 # --- Topics ---
 
@@ -136,9 +140,32 @@ DIGEST_MORE_POSTS = "  ...and {count} more posts"
 
 STATS_TEMPLATE = "\U0001f4ca <b>Statistics:</b>\n\nChannels: {channels}\nPosts: {total_posts}\nTopics: {total_topics}"
 
-# --- Language ---
+# --- Settings ---
 
-CHOOSE_LANGUAGE = "\U0001f310 Choose your language / Выберите язык:"
+SETTINGS_TITLE = (
+    "⚙️ <b>Settings</b>\n\n"
+    "\U0001f310 <b>Interface language:</b> {ui_lang}\n"
+    "<i>Language for buttons, menus, and bot messages</i>\n"
+)
+SETTINGS_ADMIN_SECTION = (
+    "\n📝 <b>Primary content language:</b> {content_lang}\n"
+    "<i>AI generates topics, TOC, and digests in this language</i>\n"
+    "\n\U0001f504 <b>Secondary language:</b> {trans_lang}\n"
+    "<i>Content is additionally translated into this language</i>\n"
+    "\n\U0001f4ec <b>Digest every:</b> {digest_interval}\n"
+    "<i>How often subscribers receive a summary of new posts</i>"
+)
+SETTINGS_CHOOSE_UI_LANG = "\U0001f310 Choose interface language:"
+SETTINGS_CHOOSE_CONTENT_LANG = "📝 Which language should AI use to generate topics, TOC, and digests?"
+SETTINGS_CHOOSE_TRANS_LANG = "\U0001f504 Which language to auto-translate content into?\n\n<i>Users with a different interface language will see the translation.</i>"
+SETTINGS_CHOOSE_DIGEST = "\U0001f4ec How often should subscribers receive the digest?"
+SETTINGS_DISABLED = "Disabled"
+LANG_NAME_RU = "Русский"
+LANG_NAME_EN = "English"
+KB_UI_LANG = "\U0001f310 Interface language"
+KB_CONTENT_LANG = "📝 Primary content language"
+KB_TRANS_LANG = "\U0001f504 Secondary language"
+KB_DIGEST_INTERVAL = "\U0001f4ec Digest interval"
 
 # --- Keyboard labels ---
 
@@ -157,7 +184,7 @@ KB_SETTINGS = "⚙️ Settings"
 KB_TO_CHANNEL = "\U0001f519 To channel"
 KB_TO_TOPICS = "\U0001f519 To topics"
 KB_NEW_SEARCH = "\U0001f50d New search"
-KB_LANGUAGE = "\U0001f310 Language"
+KB_BOT_SETTINGS = "⚙️ Settings"
 KB_SET_PINNED = "\U0001f4cc Set pinned post"
 KB_PINNED_STATUS = "\U0001f4cc Pinned: post #{id}"
 KB_FORCE_UPDATE = "\U0001f504 Update now"

@@ -83,6 +83,10 @@ CHANNEL_ERROR = "❌ Канал не найден."
 
 TOC_GENERATING = "⏳ Генерирую оглавление — это может занять около минуты..."
 TOC_EMPTY = "\U0001f4da Оглавление @{username}\n\nПока нет проиндексированных постов."
+TOC_HEADER = "\U0001f4da Оглавление @{username}"
+TOC_UPDATED = "Обновлено: {date}"
+TOC_NO_POSTS = "Пока нет проиндексированных постов."
+TOPIC_POSTS_SUFFIX = "постов"
 
 # --- Topics ---
 
@@ -140,9 +144,30 @@ DIGEST_MORE_POSTS = "  ...и ещё {count} постов"
 
 STATS_TEMPLATE = "\U0001f4ca <b>Статистика:</b>\n\nКаналов: {channels}\nПостов: {total_posts}\nТем: {total_topics}"
 
-# --- Language ---
+# --- Settings ---
 
-CHOOSE_LANGUAGE = "\U0001f310 Choose your language / Выберите язык:"
+SETTINGS_TITLE = (
+    "⚙️ <b>Настройки</b>\n\n\U0001f310 <b>Язык интерфейса:</b> {ui_lang}\n<i>Язык кнопок, меню и сообщений бота</i>\n"
+)
+SETTINGS_ADMIN_SECTION = (
+    "\n📝 <b>Основной язык контента:</b> {content_lang}\n"
+    "<i>На этом языке ИИ создаёт оглавления, темы и дайджесты</i>\n"
+    "\n\U0001f504 <b>Дополнительный язык:</b> {trans_lang}\n"
+    "<i>Контент дополнительно переводится на этот язык</i>\n"
+    "\n\U0001f4ec <b>Дайджест каждые:</b> {digest_interval}\n"
+    "<i>Как часто подписчики получают сводку новых постов</i>"
+)
+SETTINGS_CHOOSE_UI_LANG = "\U0001f310 Выберите язык интерфейса:"
+SETTINGS_CHOOSE_CONTENT_LANG = "📝 На каком языке ИИ будет создавать оглавления, темы и дайджесты?"
+SETTINGS_CHOOSE_TRANS_LANG = "\U0001f504 На какой язык автоматически переводить контент?\n\n<i>Пользователи с другим языком интерфейса увидят перевод.</i>"
+SETTINGS_CHOOSE_DIGEST = "\U0001f4ec Как часто отправлять дайджест подписчикам?"
+SETTINGS_DISABLED = "Отключён"
+LANG_NAME_RU = "Русский"
+LANG_NAME_EN = "English"
+KB_UI_LANG = "\U0001f310 Язык интерфейса"
+KB_CONTENT_LANG = "📝 Основной язык контента"
+KB_TRANS_LANG = "\U0001f504 Дополнительный язык"
+KB_DIGEST_INTERVAL = "\U0001f4ec Интервал дайджеста"
 
 # --- Keyboard labels ---
 
@@ -161,7 +186,7 @@ KB_SETTINGS = "⚙️ Настройки"
 KB_TO_CHANNEL = "\U0001f519 К каналу"
 KB_TO_TOPICS = "\U0001f519 К темам"
 KB_NEW_SEARCH = "\U0001f50d Новый поиск"
-KB_LANGUAGE = "\U0001f310 Язык"
+KB_BOT_SETTINGS = "⚙️ Настройки"
 KB_SET_PINNED = "\U0001f4cc Настроить пиннед-пост"
 KB_PINNED_STATUS = "\U0001f4cc Пиннед: пост #{id}"
 KB_FORCE_UPDATE = "\U0001f504 Обновить сейчас"

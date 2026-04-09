@@ -42,7 +42,7 @@ def start_keyboard(has_channels: bool, is_admin: bool = False, lang: str = "ru")
             [InlineKeyboardButton(add_label, callback_data="add_channel")],
             [InlineKeyboardButton(msg.KB_SUBSCRIPTIONS, callback_data="my_subs")],
         ]
-    buttons.append([InlineKeyboardButton(msg.KB_LANGUAGE, callback_data="set_lang")])
+    buttons.append([InlineKeyboardButton(msg.KB_BOT_SETTINGS, callback_data="bot_settings")])
     return InlineKeyboardMarkup(buttons)
 
 

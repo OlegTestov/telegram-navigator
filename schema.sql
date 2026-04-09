@@ -94,6 +94,43 @@ CREATE TABLE ct_user_preferences (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Bot settings (key-value, configurable via admin UI)
+CREATE TABLE ct_bot_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- Translation tables (per-entity, scalable to N languages)
+
+CREATE TABLE ct_post_translations (
+    post_id BIGINT NOT NULL REFERENCES ct_posts(id) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    description TEXT,
+    PRIMARY KEY (post_id, lang)
+);
+
+CREATE TABLE ct_topic_translations (
+    topic_id INTEGER NOT NULL REFERENCES ct_topics(id) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    name TEXT NOT NULL,
+    summary TEXT,
+    PRIMARY KEY (topic_id, lang)
+);
+
+CREATE TABLE ct_channel_toc_translations (
+    channel_id INTEGER NOT NULL REFERENCES ct_channels(id) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    cached_toc TEXT NOT NULL,
+    PRIMARY KEY (channel_id, lang)
+);
+
+CREATE TABLE ct_digest_translations (
+    digest_id BIGINT NOT NULL REFERENCES ct_channel_digests(id) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    content TEXT NOT NULL,
+    PRIMARY KEY (digest_id, lang)
+);
+
 -- Vector embeddings (requires pgvector extension)
 CREATE EXTENSION IF NOT EXISTS vector;
 
