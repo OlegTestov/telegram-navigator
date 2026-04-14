@@ -13,4 +13,3 @@ services:
       - ./data:/app/data
     command: ["python", "-m", "src.scheduler_main"]
     restart: "no"
-    profiles: ["scheduler"]

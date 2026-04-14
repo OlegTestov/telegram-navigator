@@ -10,6 +10,7 @@ from telethon.errors import FloodWaitError
 from src.config.constants import FETCH_DELAY_SECONDS
 from src.config.settings import (
     BATCH_SIZE,
+    DB_BACKEND,
     EMBEDDINGS_ENABLED,
     TELEGRAM_BOT_TOKEN,
     get_setting,
@@ -102,22 +103,25 @@ async def process_channel(channel, queries, bot, client, content_language: str):
 
     # 4. Generate embeddings
     if EMBEDDINGS_ENABLED and hasattr(queries, "get_posts_without_embeddings"):
-        unembedded = queries.get_posts_without_embeddings(channel.id, limit=500)
-        while unembedded:
-            logger.info("Generating embeddings for %d posts in @%s", len(unembedded), channel.username)
-            texts = [f"{p.description or ''} {p.text[:500]}".strip() for p in unembedded]
-            embeddings = await generate_embeddings(texts)
-            if embeddings and len(embeddings) == len(unembedded):
-                if hasattr(queries, "vector_search"):
-                    pairs = [(post.id, emb) for post, emb in zip(unembedded, embeddings)]
-                else:
-                    pairs = [(post.id, serialize_float32(emb)) for post, emb in zip(unembedded, embeddings)]
-                queries.upsert_embeddings(pairs)
-                logger.info("Stored %d embeddings for @%s", len(pairs), channel.username)
-            else:
-                logger.warning("Embedding generation failed or count mismatch, skipping")
-                break
+        try:
             unembedded = queries.get_posts_without_embeddings(channel.id, limit=500)
+            while unembedded:
+                logger.info("Generating embeddings for %d posts in @%s", len(unembedded), channel.username)
+                texts = [f"{p.description or ''} {p.text[:500]}".strip() for p in unembedded]
+                embeddings = await generate_embeddings(texts)
+                if embeddings and len(embeddings) == len(unembedded):
+                    if DB_BACKEND == "supabase":
+                        pairs = [(post.id, emb) for post, emb in zip(unembedded, embeddings)]
+                    else:
+                        pairs = [(post.id, serialize_float32(emb)) for post, emb in zip(unembedded, embeddings)]
+                    queries.upsert_embeddings(pairs)
+                    logger.info("Stored %d embeddings for @%s", len(pairs), channel.username)
+                else:
+                    logger.warning("Embedding generation failed or count mismatch, skipping")
+                    break
+                unembedded = queries.get_posts_without_embeddings(channel.id, limit=500)
+        except Exception as e:
+            logger.error("Embedding error for @%s: %s", channel.username, e)
 
     if not has_changes:
         logger.info("No changes for @%s, skipping heavy operations", channel.username)
@@ -182,10 +186,30 @@ async def translate_channel_priority(channel, queries, trans_langs: list[str], c
                     # Skip if translation failed (returned original text)
                     if name_tr == topic.name:
                         continue
-                    final_summary = summary_tr if (topic.summary and summary_tr != topic.summary) else None
+                    final_summary = summary_tr if topic.summary and summary_tr and summary_tr != topic.summary else None
                     queries.save_topic_translation(topic.id, lang, name=name_tr, summary=final_summary)
                     saved += 1
                 logger.info("Translated %d/%d topics for @%s to %s", saved, len(untranslated), channel.username, lang)
+
+            # Translate summaries for topics that have name translation but missing summary
+            needs_summary = [
+                t for t in topics
+                if t.id in existing_tr
+                and t.summary
+                and not (existing_tr[t.id].get("summary") if isinstance(existing_tr[t.id], dict) else None)
+            ]
+            if needs_summary:
+                summaries = [t.summary for t in needs_summary]
+                summaries_tr = await translate_texts(summaries, target_lang=lang)
+                updated = 0
+                for topic, summary_tr in zip(needs_summary, summaries_tr):
+                    if summary_tr and summary_tr != topic.summary:
+                        existing_name = existing_tr[topic.id]
+                        name = existing_name.get("name") if isinstance(existing_name, dict) else existing_name
+                        queries.save_topic_translation(topic.id, lang, name=name, summary=summary_tr)
+                        updated += 1
+                if updated:
+                    logger.info("Updated %d topic summaries for @%s to %s", updated, channel.username, lang)
 
         # 2. Translate TOC
         if channel.cached_toc:
