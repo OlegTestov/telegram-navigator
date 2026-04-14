@@ -193,7 +193,8 @@ async def translate_channel_priority(channel, queries, trans_langs: list[str], c
 
             # Translate summaries for topics that have name translation but missing summary
             needs_summary = [
-                t for t in topics
+                t
+                for t in topics
                 if t.id in existing_tr
                 and t.summary
                 and not (existing_tr[t.id].get("summary") if isinstance(existing_tr[t.id], dict) else None)
