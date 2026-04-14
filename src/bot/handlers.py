@@ -3,7 +3,7 @@
 import html as html_lib
 import logging
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from src.bot.keyboards import channels_keyboard, search_results_keyboard, start_keyboard
@@ -232,7 +232,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if username:
         existing = queries.get_channel_by_username(username)
         if existing:
-            await update.message.reply_text(msg.CHANNEL_EXISTS.format(username=username))
+            menu_kb = InlineKeyboardMarkup([[InlineKeyboardButton(msg.KB_OPEN_MENU, callback_data="open_menu")]])
+            await update.message.reply_text(msg.CHANNEL_EXISTS.format(username=username), reply_markup=menu_kb)
             return
 
         is_admin = _is_admin(update.effective_user.id)
