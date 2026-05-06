@@ -427,9 +427,7 @@ class DatabaseQueries:
         in schema.sql — KEEP THE FORMULA IN SYNC with this function's docstring weights.
         """
         self.db.execute(
-            lambda: self.db.client.rpc(
-                "ct_recalculate_channel_scores", {"p_channel_id": channel_id}
-            ).execute()
+            lambda: self.db.client.rpc("ct_recalculate_channel_scores", {"p_channel_id": channel_id}).execute()
         )
 
     # --- Topics ---

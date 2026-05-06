@@ -153,9 +153,7 @@ async def process_channel(channel, queries, bot, client, content_language: str):
     toc_at_raw = channel.toc_updated_at  # ISO string from Supabase; None for first run
     if toc_at_raw is not None:
         toc_at = (
-            datetime.fromisoformat(toc_at_raw.replace("Z", "+00:00"))
-            if isinstance(toc_at_raw, str)
-            else toc_at_raw
+            datetime.fromisoformat(toc_at_raw.replace("Z", "+00:00")) if isinstance(toc_at_raw, str) else toc_at_raw
         )
         hours_since = (datetime.now(timezone.utc) - toc_at).total_seconds() / 3600
         since_iso = toc_at_raw if isinstance(toc_at_raw, str) else toc_at_raw.isoformat()
