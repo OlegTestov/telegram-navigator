@@ -13,7 +13,7 @@ from supabase import create_client
 
 load_dotenv()
 
-SQLITE_PATH = os.getenv("SQLITE_DB_PATH", "data/content_table.db")
+SQLITE_PATH = os.getenv("SQLITE_DB_PATH", "data/telegram_navigator.db")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 BATCH_SIZE = 500

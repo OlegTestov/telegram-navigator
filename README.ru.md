@@ -90,7 +90,7 @@ make run            # запускает бота
 | `ADMIN_TELEGRAM_ID` | Да | — | Telegram ID администратора |
 | `GEMINI_MODEL` | Нет | `gemini-3-flash-preview` | Модель Gemini |
 | `DB_BACKEND` | Нет | `sqlite` | `sqlite` или `supabase` |
-| `SQLITE_DB_PATH` | Нет | `data/content_table.db` | Путь к SQLite БД |
+| `SQLITE_DB_PATH` | Нет | `data/telegram_navigator.db` | Путь к SQLite БД |
 | `OPENAI_API_KEY` | Нет | — | Включает гибридный поиск (семантика + ключевые слова) |
 | `CONTENT_LANGUAGE` | Нет | `en` | Язык генерации контента (темы, оглавление, дайджесты). Можно изменить в настройках бота |
 | `TRANSLATION_LANGUAGES` | Нет | `ru` | Дополнительный перевод контента (через запятую, пусто = отключён) |
@@ -140,7 +140,7 @@ telegram-navigator/
 
 ```env
 DB_BACKEND=sqlite
-SQLITE_DB_PATH=data/content_table.db
+SQLITE_DB_PATH=data/telegram_navigator.db
 ```
 
 Для гибридного поиска нужно расширение `sqlite-vec` (уже включено в `requirements.txt`). Без него работает только поиск по ключевым словам.

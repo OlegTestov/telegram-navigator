@@ -90,7 +90,7 @@ See [`.env.example`](.env.example) for all available environment variables with 
 | `ADMIN_TELEGRAM_ID` | Yes | — | Admin's Telegram user ID |
 | `GEMINI_MODEL` | No | `gemini-3-flash-preview` | Gemini model name |
 | `DB_BACKEND` | No | `sqlite` | `sqlite` or `supabase` |
-| `SQLITE_DB_PATH` | No | `data/content_table.db` | SQLite database path |
+| `SQLITE_DB_PATH` | No | `data/telegram_navigator.db` | SQLite database path |
 | `OPENAI_API_KEY` | No | — | Enables hybrid search (keywords + semantics) |
 | `CONTENT_LANGUAGE` | No | `en` | Language for LLM-generated content (topics, TOC, digests). Can also be changed in admin settings |
 | `TRANSLATION_LANGUAGES` | No | `ru` | Auto-translate content to these languages (comma-separated, empty = disabled) |
@@ -136,11 +136,11 @@ The bot supports two database backends. Set `DB_BACKEND` in `.env` to choose.
 
 ### SQLite (default)
 
-Zero-config — the database is created automatically on first run at `data/content_table.db`.
+Zero-config — the database is created automatically on first run at `data/telegram_navigator.db`.
 
 ```env
 DB_BACKEND=sqlite
-SQLITE_DB_PATH=data/content_table.db
+SQLITE_DB_PATH=data/telegram_navigator.db
 ```
 
 For hybrid (vector + keyword) search, install the optional `sqlite-vec` extension (included in `requirements.txt`). Without it, only keyword search is available.

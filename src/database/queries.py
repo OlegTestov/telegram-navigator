@@ -1,4 +1,4 @@
-"""Database queries for content-table."""
+"""Database queries for telegram-navigator."""
 
 import logging
 from datetime import datetime, timezone

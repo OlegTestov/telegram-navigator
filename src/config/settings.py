@@ -28,7 +28,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 
 # Database
 DB_BACKEND = os.getenv("DB_BACKEND", "sqlite")  # "sqlite" or "supabase"
-SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "data/content_table.db")
+SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "data/telegram_navigator.db")
 
 # Supabase (only needed if DB_BACKEND=supabase)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")

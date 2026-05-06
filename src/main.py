@@ -1,4 +1,4 @@
-"""Main entry point for content-table Telegram Bot."""
+"""Main entry point for telegram-navigator Bot."""
 
 import logging
 import sys
@@ -74,7 +74,7 @@ def create_application() -> Application:
 
 def main() -> None:
     logger.info("=" * 40)
-    logger.info("Starting content-table bot...")
+    logger.info("Starting telegram-navigator bot...")
     logger.info("=" * 40)
 
     try:

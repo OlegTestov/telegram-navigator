@@ -366,7 +366,7 @@ async def run_scheduler():
 
 def main():
     logger.info("=" * 40)
-    logger.info("Starting content-table scheduler...")
+    logger.info("Starting telegram-navigator scheduler...")
     logger.info("=" * 40)
 
     try:

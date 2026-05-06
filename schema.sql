@@ -1,4 +1,4 @@
--- content-table: Telegram Channel TOC Bot
+-- telegram-navigator: AI-powered navigator for Telegram channels
 -- Run this in Supabase SQL Editor or via psql
 
 CREATE TABLE ct_channels (
