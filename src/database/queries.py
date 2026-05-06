@@ -1,11 +1,10 @@
 """Database queries for content-table."""
 
 import logging
-import math
 from datetime import datetime, timezone
 from typing import Optional
 
-from src.config.constants import FRESHNESS_HALF_LIFE_DAYS, POSTS_PER_PAGE
+from src.config.constants import POSTS_PER_PAGE
 from src.database.client import SupabaseClient
 from src.database.models import Channel, Post, Topic
 from src.utils.helpers import slugify
@@ -185,6 +184,23 @@ class DatabaseQueries:
                 .select("id", count="exact")
                 .eq("channel_id", channel_id)
                 .is_("classified_at", "null")
+                .execute()
+            )
+        )
+        return result.count or 0
+
+    def count_classified_since(self, channel_id: int, since_iso: str) -> int:
+        """Count posts in this channel whose classified_at is strictly after `since_iso`.
+
+        Used to gate TOC regeneration: TOC content depends on post descriptions, which
+        are populated only at classification time, so newly-classified is the right trigger.
+        """
+        result = self.db.execute(
+            lambda: (
+                self.db.client.table("ct_posts")
+                .select("id", count="exact")
+                .eq("channel_id", channel_id)
+                .gt("classified_at", since_iso)
                 .execute()
             )
         )
@@ -405,46 +421,16 @@ class DatabaseQueries:
         return result.count or 0
 
     def recalculate_scores(self, channel_id: int):
-        """Recalculate scores for all posts in a channel."""
-        result = self.db.execute(
-            lambda: (
-                self.db.client.table("ct_posts")
-                .select("id, views, forwards, reactions_count, post_date, usefulness_score")
-                .eq("channel_id", channel_id)
-                .execute()
-            )
+        """Recalculate scores for all posts in a channel via server-side RPC.
+
+        Single round-trip; math runs in Postgres. See ct_recalculate_channel_scores()
+        in schema.sql — KEEP THE FORMULA IN SYNC with this function's docstring weights.
+        """
+        self.db.execute(
+            lambda: self.db.client.rpc(
+                "ct_recalculate_channel_scores", {"p_channel_id": channel_id}
+            ).execute()
         )
-        if not result.data:
-            return
-
-        # Find max engagement for normalization
-        max_eng = 1.0
-        now = datetime.now(timezone.utc)
-        for row in result.data:
-            eng = math.log(max(row["views"] or 0, 1)) * 0.5 + (row["forwards"] or 0) * 2 + (row["reactions_count"] or 0)
-            if eng > max_eng:
-                max_eng = eng
-
-        for row in result.data:
-            eng = math.log(max(row["views"] or 0, 1)) * 0.5 + (row["forwards"] or 0) * 2 + (row["reactions_count"] or 0)
-            engagement_norm = min(1.0, eng / max_eng)
-
-            post_date = row["post_date"]
-            if isinstance(post_date, str):
-                post_date = datetime.fromisoformat(post_date.replace("Z", "+00:00"))
-            days_old = (now - post_date).total_seconds() / 86400
-            freshness = math.exp(-days_old / FRESHNESS_HALF_LIFE_DAYS)
-
-            usefulness = row.get("usefulness_score") or 0.5
-
-            score = engagement_norm * 0.4 + freshness * 0.3 + usefulness * 0.3
-
-            post_id = row["id"]
-            self.db.execute(
-                lambda pid=post_id, s=score: (
-                    self.db.client.table("ct_posts").update({"score": round(s, 4)}).eq("id", pid).execute()
-                )
-            )
 
     # --- Topics ---
 

@@ -14,7 +14,13 @@ MAX_POST_TEXT_FOR_LLM = 1500
 SCORE_ENGAGEMENT_WEIGHT = 0.4
 SCORE_FRESHNESS_WEIGHT = 0.3
 SCORE_USEFULNESS_WEIGHT = 0.3
+# KEEP IN SYNC WITH ct_recalculate_channel_scores() in schema.sql (currently hardcodes 180.0).
 FRESHNESS_HALF_LIFE_DAYS = 180
+
+# TOC regeneration thresholds — gate the expensive Gemini call in process_channel().
+# Both conditions must be met to regenerate; first run (toc_updated_at IS NULL) bypasses.
+TOC_REGEN_MIN_HOURS = 24
+TOC_REGEN_MIN_NEW_CLASSIFIED = 5
 
 # Fetcher
 FETCH_DELAY_SECONDS = 2

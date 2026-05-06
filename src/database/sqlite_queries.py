@@ -482,6 +482,14 @@ class SQLiteQueries:
         row = self.conn.execute("SELECT COUNT(*) as cnt FROM ct_posts WHERE channel_id = ?", (channel_id,)).fetchone()
         return row["cnt"] if row else 0
 
+    def count_classified_since(self, channel_id: int, since_iso: str) -> int:
+        """Count posts in this channel whose classified_at is strictly after `since_iso`."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) FROM ct_posts WHERE channel_id = ? AND classified_at > ?",
+            (channel_id, since_iso),
+        ).fetchone()
+        return row[0]
+
     def recalculate_scores(self, channel_id: int):
         rows = self.conn.execute(
             "SELECT id, views, forwards, reactions_count, post_date, usefulness_score FROM ct_posts WHERE channel_id = ?",

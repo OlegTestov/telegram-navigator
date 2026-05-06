@@ -171,3 +171,39 @@ CREATE OR REPLACE FUNCTION match_posts(
     ORDER BY e.embedding <=> query_embedding
     LIMIT match_count;
 $$ LANGUAGE sql STABLE;
+
+-- KEEP IN SYNC WITH src/database/queries.py:recalculate_scores
+-- Half-life: src/config/constants.py:FRESHNESS_HALF_LIFE_DAYS (=180 days)
+-- Score weights match SCORE_*_WEIGHT in src/config/constants.py: 0.4 / 0.3 / 0.3
+CREATE OR REPLACE FUNCTION ct_recalculate_channel_scores(p_channel_id BIGINT)
+RETURNS VOID
+LANGUAGE SQL
+AS $$
+  WITH stats AS (
+    SELECT
+      id,
+      post_date,
+      LN(GREATEST(COALESCE(views, 0), 1)) * 0.5
+        + COALESCE(forwards, 0) * 2
+        + COALESCE(reactions_count, 0) AS eng,
+      COALESCE(usefulness_score, 0.5) AS u
+    FROM ct_posts
+    WHERE channel_id = p_channel_id
+  ),
+  norm AS (
+    SELECT *, GREATEST(MAX(eng) OVER (), 1.0) AS max_eng FROM stats
+  )
+  UPDATE ct_posts p
+  SET score = ROUND(
+    ( LEAST(1.0, n.eng / n.max_eng) * 0.4
+      + EXP(- EXTRACT(EPOCH FROM (NOW() - n.post_date)) / 86400.0 / 180.0) * 0.3
+      + n.u * 0.3
+    )::numeric,
+    4
+  )
+  FROM norm n
+  WHERE p.id = n.id;
+$$;
+
+GRANT EXECUTE ON FUNCTION ct_recalculate_channel_scores(BIGINT)
+  TO service_role, authenticated;

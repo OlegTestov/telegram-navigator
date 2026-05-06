@@ -3,11 +3,12 @@
 import asyncio
 import logging
 import sys
+from datetime import datetime, timezone
 
 from telegram import Bot
 from telethon.errors import FloodWaitError
 
-from src.config.constants import FETCH_DELAY_SECONDS
+from src.config.constants import FETCH_DELAY_SECONDS, TOC_REGEN_MIN_HOURS, TOC_REGEN_MIN_NEW_CLASSIFIED
 from src.config.settings import (
     BATCH_SIZE,
     DB_BACKEND,
@@ -146,6 +147,34 @@ async def process_channel(channel, queries, bot, client, content_language: str):
 
     # 8. Generate TOC
     channel = queries.get_channel_by_id(channel.id)  # Refresh
+
+    # Gate the expensive TOC regeneration (Gemini call sending all 365 days of posts):
+    # skip unless enough new classified posts AND enough time has passed.
+    toc_at_raw = channel.toc_updated_at  # ISO string from Supabase; None for first run
+    if toc_at_raw is not None:
+        toc_at = (
+            datetime.fromisoformat(toc_at_raw.replace("Z", "+00:00"))
+            if isinstance(toc_at_raw, str)
+            else toc_at_raw
+        )
+        hours_since = (datetime.now(timezone.utc) - toc_at).total_seconds() / 3600
+        since_iso = toc_at_raw if isinstance(toc_at_raw, str) else toc_at_raw.isoformat()
+        new_classified = queries.count_classified_since(channel.id, since_iso)
+        if hours_since < TOC_REGEN_MIN_HOURS or new_classified < TOC_REGEN_MIN_NEW_CLASSIFIED:
+            logger.info(
+                "toc_decision channel=%s decision=skip new_classified=%d hours_since=%.1f",
+                channel.username,
+                new_classified,
+                hours_since,
+            )
+            return
+        logger.info(
+            "toc_decision channel=%s decision=regen new_classified=%d hours_since=%.1f",
+            channel.username,
+            new_classified,
+            hours_since,
+        )
+
     toc, groups, post_map = await generate_compact_toc(channel, queries, content_language)
     queries.save_cached_toc(channel.id, toc)
 
