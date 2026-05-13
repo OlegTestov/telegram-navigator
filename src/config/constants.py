@@ -19,7 +19,7 @@ FRESHNESS_HALF_LIFE_DAYS = 180
 
 # TOC regeneration thresholds — gate the expensive Gemini call in process_channel().
 # Both conditions must be met to regenerate; first run (toc_updated_at IS NULL) bypasses.
-TOC_REGEN_MIN_HOURS = 24
+TOC_REGEN_MIN_HOURS = 120
 TOC_REGEN_MIN_NEW_CLASSIFIED = 5
 
 # Fetcher
